@@ -2,7 +2,7 @@ import React from 'react';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 
-const Login = () => {
+const Login = ({ setIsLogin }) => {
   return (
     <div style={styles.container}>
       <h1 style={typography.displayMdBold}>Login</h1>
@@ -17,7 +17,7 @@ const Login = () => {
       </div>
       <button style={styles.googleButton}>Continue with Google</button>
       <p style={typography.textSmRegular}>
-        Don't have an account? <span style={styles.link}>Signup</span>
+        Don't have an account? <span style={styles.link} onClick={() => setIsLogin(false)}>Signup</span>
       </p>
     </div>
   );

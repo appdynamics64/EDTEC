@@ -2,14 +2,20 @@ import React from 'react';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 
-const Signup = () => {
+const Signup = ({ setIsLogin, setShowConfirmation, setShowExamSelection }) => {
+  const handleSignup = () => {
+    // Simulate a successful signup
+    setShowConfirmation(true);
+    setShowExamSelection(false); // Ensure Exam Selection is hidden
+  };
+
   return (
     <div style={styles.container}>
       <h1 style={typography.displayMdBold}>Signup</h1>
       <p style={typography.textLgRegular}>and start practicing</p>
       <input type="email" placeholder="Your email" style={styles.input} />
       <input type="password" placeholder="Password" style={styles.input} />
-      <button style={styles.button}>Continue →</button>
+      <button style={styles.button} onClick={handleSignup}>Continue →</button>
       <div style={styles.orContainer}>
         <hr style={styles.hr} />
         <span style={styles.orText}>or</span>
@@ -17,7 +23,7 @@ const Signup = () => {
       </div>
       <button style={styles.googleButton}>Continue with Google</button>
       <p style={typography.textSmRegular}>
-        Already have an account? <span style={styles.link}>Signin</span>
+        Already have an account? <span style={styles.link} onClick={() => setIsLogin(true)}>Signin</span>
       </p>
     </div>
   );
