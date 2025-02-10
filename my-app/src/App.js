@@ -1,35 +1,25 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Confirmation from './pages/Confirmation';
 import ExamSelection from './pages/ExamSelection';
+import Dashboard from './pages/Dashboard';
+import AllTests from './pages/AllTests';
 import './App.css';
 
 function App() {
-  const [isLogin, setIsLogin] = useState(true);
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [showExamSelection, setShowExamSelection] = useState(false);
-
   return (
-    <div className="App">
-      {showExamSelection ? (
-        <ExamSelection setIsLogin={setIsLogin} />
-      ) : showConfirmation ? (
-        <Confirmation 
-          setIsLogin={setIsLogin} 
-          setShowConfirmation={setShowConfirmation} 
-          setShowExamSelection={setShowExamSelection} 
-        />
-      ) : isLogin ? (
-        <Login setIsLogin={setIsLogin} />
-      ) : (
-        <Signup 
-          setIsLogin={setIsLogin} 
-          setShowConfirmation={setShowConfirmation} 
-          setShowExamSelection={setShowExamSelection} 
-        />
-      )}
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/confirmation" element={<Confirmation />} />
+        <Route path="/exam-selection" element={<ExamSelection />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/all-tests" element={<AllTests />} />
+      </Routes>
+    </Router>
   );
 }
 

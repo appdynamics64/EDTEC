@@ -1,23 +1,118 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 
-const Login = ({ setIsLogin }) => {
+const Login = () => {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      // Successful login
+      navigate('/dashboard');
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google'
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  // Add this test function temporarily
+  const testSupabase = async () => {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      console.log('Supabase connection test:', { data, error });
+    } catch (err) {
+      console.error('Supabase test error:', err);
+    }
+  };
+
+  // Call it when component mounts
+  useEffect(() => {
+    testSupabase();
+  }, []);
+
   return (
     <div style={styles.container}>
       <h1 style={typography.displayMdBold}>Login</h1>
       <p style={typography.textLgRegular}>and start practicing</p>
-      <input type="email" placeholder="Your email" style={styles.input} />
-      <input type="password" placeholder="Password" style={styles.input} />
-      <button style={styles.button}>Continue →</button>
+      
+      {error && (
+        <p style={styles.error}>{error}</p>
+      )}
+
+      <form onSubmit={handleLogin}>
+        <input
+          type="email"
+          placeholder="Your email"
+          style={styles.input}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          style={styles.input}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <button 
+          style={styles.button}
+          disabled={loading}
+        >
+          {loading ? 'Loading...' : 'Continue →'}
+        </button>
+      </form>
+
       <div style={styles.orContainer}>
         <hr style={styles.hr} />
         <span style={styles.orText}>or</span>
         <hr style={styles.hr} />
       </div>
-      <button style={styles.googleButton}>Continue with Google</button>
+
+      <button 
+        style={styles.googleButton}
+        onClick={handleGoogleLogin}
+      >
+        Continue with Google
+      </button>
+
       <p style={typography.textSmRegular}>
-        Don't have an account? <span style={styles.link} onClick={() => setIsLogin(false)}>Signup</span>
+        Don't have an account?{' '}
+        <span 
+          style={styles.link}
+          onClick={() => navigate('/signup')}
+        >
+          Signup
+        </span>
       </p>
     </div>
   );
@@ -75,6 +170,10 @@ const styles = {
     color: colors.brandPrimary,
     textDecoration: 'underline',
     cursor: 'pointer',
+  },
+  error: {
+    color: colors.error,
+    marginBottom: '10px',
   },
 };
 
