@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Confirmation from './pages/Confirmation';
@@ -12,10 +12,16 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Login />} />
+        {/* Redirect root to login */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        
+        {/* Auth routes */}
+        <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/confirmation" element={<Confirmation />} />
         <Route path="/exam-selection" element={<ExamSelection />} />
+        
+        {/* App routes */}
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/all-tests" element={<AllTests />} />
       </Routes>
