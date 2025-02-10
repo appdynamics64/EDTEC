@@ -1,23 +1,33 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 
-const Confirmation = ({ setIsLogin, setShowConfirmation, setShowExamSelection }) => {
-  const handleConfirm = () => {
-    setShowConfirmation(false); // Hide confirmation
-    setShowExamSelection(true); // Show exam selection
+const Confirmation = () => {
+  const navigate = useNavigate();
+
+  const handleContinue = () => {
+    navigate('/exam-selection');
   };
 
   return (
     <div style={styles.container}>
-      <h1 style={typography.displayMdBold}>Check your inbox</h1>
+      <h1 style={typography.displayMdBold}>Check your email</h1>
       <p style={typography.textLgRegular}>
-        An activation link has been sent to example@xyz.ai. Be sure to look in your spam folder if you don't see it in your inbox.
+        We've sent a confirmation link to your email address
       </p>
+      <button style={styles.button} onClick={handleContinue}>
+        Continue →
+      </button>
       <p style={typography.textSmRegular}>
-        <span style={styles.link} onClick={() => setIsLogin(true)}>← Back to login</span>
+        Back to{' '}
+        <span 
+          style={styles.link} 
+          onClick={() => navigate('/')}
+        >
+          Login
+        </span>
       </p>
-      <button style={styles.button} onClick={handleConfirm}>Confirm</button>
     </div>
   );
 };
@@ -40,6 +50,8 @@ const styles = {
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
+    marginTop: '20px',
+    marginBottom: '20px',
   },
   link: {
     color: colors.brandPrimary,
