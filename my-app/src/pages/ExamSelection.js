@@ -1,67 +1,88 @@
 import React, { useState } from 'react';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../config/supabaseClient';
 
-const ExamSelection = ({ setIsLogin }) => {
+const ExamSelection = () => {
+  const navigate = useNavigate();
   const [name, setName] = useState('');
   const [selectedExam, setSelectedExam] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleConfirm = () => {
-    // Handle the confirmation logic here
-    console.log(`Name: ${name}, Selected Exam: ${selectedExam}`);
-    // You can navigate to another page or show a success message
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+
+      if (!user) {
+        navigate('/login');
+        return;
+      }
+
+      // Update user record with name and selected exam
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          name: name,
+          selected_exam: selectedExam
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error saving user details:', error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div style={styles.container}>
-      <h1 style={typography.displayMdBold}>Your name</h1>
-      <input
-        type="text"
-        placeholder="Your name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        style={styles.input}
-      />
-      <h2 style={typography.textLgRegular}>Choose exam</h2>
-      <div>
-        <label>
-          <input
-            type="radio"
-            value="SSC CHSL"
-            checked={selectedExam === 'SSC CHSL'}
-            onChange={(e) => setSelectedExam(e.target.value)}
-          />
-          SSC CHSL
-        </label>
-        <label>
-          <input
-            type="radio"
-            value="Bank PO"
-            checked={selectedExam === 'Bank PO'}
-            onChange={(e) => setSelectedExam(e.target.value)}
-          />
-          Bank PO
-        </label>
-        <label>
-          <input
-            type="radio"
-            value="NDA"
-            checked={selectedExam === 'NDA'}
-            onChange={(e) => setSelectedExam(e.target.value)}
-          />
-          NDA
-        </label>
-        <label>
-          <input
-            type="radio"
-            value="SSC GD"
-            checked={selectedExam === 'SSC GD'}
-            onChange={(e) => setSelectedExam(e.target.value)}
-          />
-          SSC GD
-        </label>
-      </div>
-      <button style={styles.button} onClick={handleConfirm}>Confirm</button>
+      <h1 style={typography.displayMdBold}>Welcome!</h1>
+      <p style={typography.textLgRegular}>Let's get to know you better</p>
+
+      {error && (
+        <p style={styles.error}>{error}</p>
+      )}
+
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          placeholder="Your name"
+          style={styles.input}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
+        <select
+          value={selectedExam}
+          onChange={(e) => setSelectedExam(e.target.value)}
+          style={styles.select}
+          required
+        >
+          <option value="">Select your exam</option>
+          <option value="SSC CHSL">SSC CHSL</option>
+          <option value="Bank PO">Bank PO</option>
+          <option value="NDA">NDA</option>
+          <option value="SSC GD">SSC GD</option>
+        </select>
+        <button 
+          style={styles.button}
+          disabled={loading || !name || !selectedExam}
+        >
+          {loading ? 'Saving...' : 'Continue →'}
+        </button>
+      </form>
     </div>
   );
 };
@@ -91,6 +112,17 @@ const styles = {
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
+  },
+  error: {
+    color: colors.error,
+    margin: '10px 0',
+  },
+  select: {
+    width: '100%',
+    padding: '10px',
+    margin: '10px 0',
+    border: '1px solid #ccc',
+    borderRadius: '4px',
   },
 };
 

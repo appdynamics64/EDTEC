@@ -11,6 +11,21 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Check for existing session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        // If no session, stay on login
+        navigate('/login');
+      } else {
+        // If session exists, go to dashboard
+        navigate('/dashboard');
+      }
+    };
+    checkSession();
+  }, [navigate]);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
@@ -35,13 +50,50 @@ const Login = () => {
 
   const handleGoogleLogin = async () => {
     try {
+      setLoading(true);
       const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google'
+        provider: 'google',
+        options: {
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+          redirectTo: `${window.location.origin}/dashboard`
+        }
       });
 
       if (error) throw error;
+
+      // Google OAuth success
+      if (data?.user) {
+        // Check if user exists in users table
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select()
+          .eq('id', data.user.id)
+          .single();
+
+        if (!userData) {
+          // Create user record if it doesn't exist
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert([
+              {
+                id: data.user.id,
+                email: data.user.email,
+                name: data.user.user_metadata?.full_name || data.user.email.split('@')[0],
+                role: 'user'
+              }
+            ]);
+
+          if (insertError) throw insertError;
+        }
+      }
     } catch (error) {
+      console.error('Google login error:', error);
       setError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -101,8 +153,9 @@ const Login = () => {
       <button 
         style={styles.googleButton}
         onClick={handleGoogleLogin}
+        disabled={loading}
       >
-        Continue with Google
+        {loading ? 'Connecting...' : 'Continue with Google'}
       </button>
 
       <p style={typography.textSmRegular}>

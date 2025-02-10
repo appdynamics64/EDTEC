@@ -1,13 +1,61 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const [userName, setUserName] = useState(null);
+  const [userExam, setUserExam] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, []);
+
+  const fetchUserProfile = async () => {
+    try {
+      // Get current user from Supabase auth
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        navigate('/');
+        return;
+      }
+
+      // Get user details from your users table
+      const { data, error } = await supabase
+        .from('users')
+        .select('name, selected_exam')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      
+      if (data) {
+        setUserName(data.name);
+        setUserExam(data.selected_exam);
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSeeAllClick = () => {
     navigate('/all-tests');
+  };
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      navigate('/login');
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
   };
 
   return (
@@ -19,12 +67,24 @@ const Dashboard = () => {
             <span>☀️</span>
             <span style={typography.textSmRegular}>GOOD MORNING</span>
           </div>
-          <h1 style={typography.displayMdBold}>Anil</h1>
+          {userName && (
+            <h1 style={typography.displayMdBold}>{userName}</h1>
+          )}
           <div style={styles.examSelector}>
-            <span style={typography.textSmRegular}>Exam: SSC</span>
+            <span style={typography.textSmRegular}>
+              Exam: {userExam || 'Not Selected'}
+            </span>
           </div>
         </div>
-        <div style={styles.profileAvatar} />
+        <div style={styles.headerRight}>
+          <div style={styles.profileAvatar} />
+          <button 
+            onClick={handleLogout}
+            style={styles.logoutButton}
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       {/* Action Buttons */}
@@ -200,6 +260,24 @@ const styles = {
   arrow: {
     color: colors.textSecondary,
     fontSize: '20px',
+  },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  logoutButton: {
+    padding: '8px 16px',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    color: colors.backgroundPrimary,
+    border: 'none',
+    borderRadius: '20px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    transition: 'background-color 0.2s',
+    ':hover': {
+      backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    }
   },
 };
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
@@ -11,22 +11,70 @@ const Signup = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        navigate('/exam-selection');
+      }
+    };
+    checkSession();
+  }, [navigate]);
+
+  const handleEmailChange = (e) => {
+    setEmail(e.target.value); // Remove trim() to allow typing
+  };
+
   const handleSignup = async (e) => {
     e.preventDefault();
     try {
       setLoading(true);
       setError(null);
 
-      const { data, error } = await supabase.auth.signUp({
+      // Email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Please enter a valid email address');
+      }
+
+      // First create the user in auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            email: email
+          }
+        }
       });
 
-      if (error) throw error;
+      if (authError) throw authError;
 
-      // Successful signup
-      navigate('/confirmation');
+      if (authData?.user) {
+        // Wait a moment for auth to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Then create the user record
+        const { error: userError } = await supabase
+          .from('users')
+          .insert({
+            id: authData.user.id,
+            email: email,
+            name: email.split('@')[0],
+            role: 'user'
+          });
+
+        if (userError && userError.code !== '23505') { // Ignore duplicate key errors
+          console.error('User creation error:', userError);
+        }
+
+        navigate('/confirmation');
+      } else {
+        throw new Error('Failed to create account. Please try again.');
+      }
+
     } catch (error) {
+      console.error('Error details:', error);
       setError(error.message);
     } finally {
       setLoading(false);
@@ -35,13 +83,25 @@ const Signup = () => {
 
   const handleGoogleSignup = async () => {
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google'
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+          redirectTo: `${window.location.origin}/exam-selection`
+        }
       });
 
       if (error) throw error;
+
     } catch (error) {
+      console.error('Google signup error:', error);
       setError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -56,11 +116,12 @@ const Signup = () => {
 
       <form onSubmit={handleSignup}>
         <input
-          type="email"
+          type="text"
           placeholder="Your email"
           style={styles.input}
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={handleEmailChange}
+          autoComplete="email"
         />
         <input
           type="password"
@@ -68,10 +129,12 @@ const Signup = () => {
           style={styles.input}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          autoComplete="new-password"
         />
         <button 
           style={styles.button}
           disabled={loading}
+          type="submit"
         >
           {loading ? 'Creating Account...' : 'Continue →'}
         </button>
@@ -86,8 +149,9 @@ const Signup = () => {
       <button 
         style={styles.googleButton}
         onClick={handleGoogleSignup}
+        disabled={loading}
       >
-        Continue with Google
+        {loading ? 'Connecting...' : 'Continue with Google'}
       </button>
 
       <p style={typography.textSmRegular}>
