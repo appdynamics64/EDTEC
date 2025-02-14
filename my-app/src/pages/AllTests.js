@@ -29,9 +29,10 @@ const AllTests = () => {
           )
         `);
 
-      // Filter based on category
-      if (activeCategory !== 'all') {
-        query = query.eq('type', activeCategory);
+      if (activeCategory === 'recommended') {
+        query = query.eq('type', 'recommended');
+      } else if (activeCategory === 'custom') {
+        query = query.eq('type', 'custom');
       }
 
       const { data, error } = await query;
@@ -53,53 +54,42 @@ const AllTests = () => {
     navigate(`/test/${testId}`);
   };
 
-  const handleCategoryChange = (category) => {
-    setActiveCategory(category);
-  };
-
   return (
     <div style={styles.container}>
       {/* Header */}
-      <header style={styles.header}>
-        <span 
-          onClick={handleBackClick}
-          style={{...styles.backButton, cursor: 'pointer'}}
-        >
-          ←
-        </span>
-        <h1 style={{...typography.displaySmBold, color: colors.textPrimary}}>
-          All Tests
-        </h1>
-      </header>
+      <div style={styles.header}>
+        <span onClick={handleBackClick} style={styles.backButton}>←</span>
+        <span style={typography.textLgBold}>All Tests</span>
+      </div>
 
-      {/* Test Categories */}
-      <div style={styles.testCategories}>
+      {/* Categories */}
+      <div style={styles.categories}>
         <button 
           style={{
-            ...styles.category, 
-            ...(activeCategory === 'all' && styles.activeCategory)
+            ...styles.categoryButton,
+            ...(activeCategory === 'all' && styles.activeCategoryButton)
           }}
-          onClick={() => handleCategoryChange('all')}
+          onClick={() => setActiveCategory('all')}
         >
-          All tests
+          All test
         </button>
         <button 
           style={{
-            ...styles.category, 
-            ...(activeCategory === 'recommended' && styles.activeCategory)
+            ...styles.categoryButton,
+            ...(activeCategory === 'recommended' && styles.activeCategoryButton)
           }}
-          onClick={() => handleCategoryChange('recommended')}
+          onClick={() => setActiveCategory('recommended')}
         >
-          Recommended
+          Recommended test
         </button>
         <button 
           style={{
-            ...styles.category, 
-            ...(activeCategory === 'custom' && styles.activeCategory)
+            ...styles.categoryButton,
+            ...(activeCategory === 'custom' && styles.activeCategoryButton)
           }}
-          onClick={() => handleCategoryChange('custom')}
+          onClick={() => setActiveCategory('custom')}
         >
-          Custom
+          Custom test
         </button>
       </div>
 
@@ -120,22 +110,22 @@ const AllTests = () => {
               style={styles.testItem}
               onClick={() => handleTestClick(test.id)}
             >
-              <div style={styles.testInfo}>
-                <h3 style={typography.textLgMedium}>
-                  {test.title}
-                </h3>
+              <div>
+                <h3 style={typography.textLgMedium}>{test.title}</h3>
                 <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
-                  {test.total_questions} questions · {test.duration} hrs
+                  {test.total_questions} questions · {test.duration}hrs
                 </p>
               </div>
-              {test.user_tests?.length > 0 ? (
-                <div style={styles.score}>
-                  <span style={styles.checkIcon}>✓</span>
-                  Score {test.user_tests[0].score}/{test.total_questions}
-                </div>
-              ) : (
-                <span style={styles.arrow}>→</span>
-              )}
+              <div style={styles.rightContent}>
+                {test.user_tests?.[0]?.status === 'completed' ? (
+                  <div style={styles.score}>
+                    <span style={styles.checkIcon}>✓</span>
+                    Score {test.user_tests[0].score}/{test.total_questions}
+                  </div>
+                ) : (
+                  <span style={styles.arrow}>›</span>
+                )}
+              </div>
             </div>
           ))
         )}
@@ -146,38 +136,39 @@ const AllTests = () => {
 
 const styles = {
   container: {
-    padding: '20px',
+    padding: '16px',
     backgroundColor: colors.backgroundPrimary,
     minHeight: '100vh',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
-    gap: '16px',
+    gap: '12px',
     marginBottom: '24px',
   },
   backButton: {
     fontSize: '24px',
-    color: colors.textPrimary,
     cursor: 'pointer',
+    color: colors.textPrimary,
   },
-  testCategories: {
+  categories: {
     display: 'flex',
-    gap: '12px',
+    gap: '8px',
     marginBottom: '24px',
     overflowX: 'auto',
+    paddingBottom: '8px',
   },
-  category: {
+  categoryButton: {
     padding: '8px 16px',
     borderRadius: '20px',
-    border: `1px solid ${colors.borderPrimary}`,
-    background: 'none',
+    border: `1px solid ${colors.brandPrimary}`,
+    backgroundColor: 'transparent',
+    color: colors.brandPrimary,
     whiteSpace: 'nowrap',
     cursor: 'pointer',
-    color: colors.textPrimary,
     ...typography.textSmMedium,
   },
-  activeCategory: {
+  activeCategoryButton: {
     backgroundColor: colors.brandPrimary,
     color: colors.backgroundPrimary,
     border: 'none',
@@ -185,40 +176,39 @@ const styles = {
   testList: {
     display: 'flex',
     flexDirection: 'column',
+    gap: '8px',
   },
   testItem: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '16px 0',
-    borderBottom: `1px solid ${colors.borderPrimary}`,
+    borderBottom: `1px solid ${colors.backgroundSecondary}`,
+    cursor: 'pointer',
   },
-  testInfo: {
+  rightContent: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
+    alignItems: 'center',
   },
   score: {
     display: 'flex',
     alignItems: 'center',
     gap: '4px',
-    color: '#4CAF50',
-    ...typography.textSmMedium,
+    color: colors.accentSuccess,
+    ...typography.textSmRegular,
   },
   checkIcon: {
-    color: '#4CAF50',
-    fontSize: '16px',
+    color: colors.accentSuccess,
   },
   arrow: {
+    fontSize: '24px',
     color: colors.textSecondary,
-    fontSize: '20px',
   },
   noTests: {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
     padding: '40px 0',
-    textAlign: 'center',
   },
 };
 
