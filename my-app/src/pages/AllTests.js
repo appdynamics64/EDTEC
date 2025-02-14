@@ -1,13 +1,60 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 
 const AllTests = () => {
   const navigate = useNavigate();
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [tests, setTests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchTests();
+  }, [activeCategory]);
+
+  const fetchTests = async () => {
+    try {
+      setLoading(true);
+      let query = supabase
+        .from('exam_tests')
+        .select(`
+          *,
+          exam:exams(name),
+          user_tests(
+            score,
+            status,
+            completed_at
+          )
+        `);
+
+      // Filter based on category
+      if (activeCategory !== 'all') {
+        query = query.eq('type', activeCategory);
+      }
+
+      const { data, error } = await query;
+      
+      if (error) throw error;
+      setTests(data);
+    } catch (error) {
+      console.error('Error fetching tests:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleBackClick = () => {
     navigate('/dashboard');
+  };
+
+  const handleTestClick = (testId) => {
+    navigate(`/test/${testId}`);
+  };
+
+  const handleCategoryChange = (category) => {
+    setActiveCategory(category);
   };
 
   return (
@@ -27,65 +74,71 @@ const AllTests = () => {
 
       {/* Test Categories */}
       <div style={styles.testCategories}>
-        <button style={{...styles.category, ...styles.activeCategory}}>All test</button>
-        <button style={styles.category}>Recommended test</button>
-        <button style={styles.category}>Custom test</button>
+        <button 
+          style={{
+            ...styles.category, 
+            ...(activeCategory === 'all' && styles.activeCategory)
+          }}
+          onClick={() => handleCategoryChange('all')}
+        >
+          All tests
+        </button>
+        <button 
+          style={{
+            ...styles.category, 
+            ...(activeCategory === 'recommended' && styles.activeCategory)
+          }}
+          onClick={() => handleCategoryChange('recommended')}
+        >
+          Recommended
+        </button>
+        <button 
+          style={{
+            ...styles.category, 
+            ...(activeCategory === 'custom' && styles.activeCategory)
+          }}
+          onClick={() => handleCategoryChange('custom')}
+        >
+          Custom
+        </button>
       </div>
 
       {/* Test List */}
       <div style={styles.testList}>
-        <div style={styles.testItem}>
-          <div style={styles.testInfo}>
-            <h3 style={typography.textLgMedium}>Custom test 1</h3>
-            <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
-              100 questions · 2hrs
+        {loading ? (
+          <p style={typography.textMdRegular}>Loading tests...</p>
+        ) : tests.length === 0 ? (
+          <div style={styles.noTests}>
+            <p style={{...typography.textLgRegular, color: colors.textSecondary}}>
+              No tests found
             </p>
           </div>
-          <span style={styles.arrow}>→</span>
-        </div>
-
-        <div style={styles.testItem}>
-          <div style={styles.testInfo}>
-            <h3 style={typography.textLgMedium}>Custom test 2</h3>
-            <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
-              100 questions · 2hrs
-            </p>
-          </div>
-          <span style={styles.arrow}>→</span>
-        </div>
-
-        <div style={styles.testItem}>
-          <div style={styles.testInfo}>
-            <h3 style={typography.textLgMedium}>Test 2</h3>
-            <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
-              100 questions · 2hrs
-            </p>
-          </div>
-          <div style={styles.score}>
-            <span style={styles.checkIcon}>✓</span>
-            Score 20/300
-          </div>
-        </div>
-
-        <div style={styles.testItem}>
-          <div style={styles.testInfo}>
-            <h3 style={typography.textLgMedium}>Test 3</h3>
-            <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
-              100 questions · 2hrs
-            </p>
-          </div>
-          <span style={styles.arrow}>→</span>
-        </div>
-
-        <div style={styles.testItem}>
-          <div style={styles.testInfo}>
-            <h3 style={typography.textLgMedium}>Test 4</h3>
-            <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
-              100 questions · 2hrs
-            </p>
-          </div>
-          <span style={styles.arrow}>→</span>
-        </div>
+        ) : (
+          tests.map((test) => (
+            <div 
+              key={test.id} 
+              style={styles.testItem}
+              onClick={() => handleTestClick(test.id)}
+            >
+              <div style={styles.testInfo}>
+                <h3 style={typography.textLgMedium}>
+                  {test.title}
+                </h3>
+                <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
+                  {test.total_questions} questions · {test.duration} hrs
+                </p>
+              </div>
+              {test.user_tests?.length > 0 ? (
+                <div style={styles.score}>
+                  <span style={styles.checkIcon}>✓</span>
+                  Score {test.user_tests[0].score}/{test.total_questions}
+                </div>
+              ) : (
+                <span style={styles.arrow}>→</span>
+              )}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
@@ -159,6 +212,13 @@ const styles = {
   arrow: {
     color: colors.textSecondary,
     fontSize: '20px',
+  },
+  noTests: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '40px 0',
+    textAlign: 'center',
   },
 };
 

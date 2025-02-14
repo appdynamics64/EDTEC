@@ -6,6 +6,7 @@ import Confirmation from './pages/Confirmation';
 import ExamSelection from './pages/ExamSelection';
 import Dashboard from './pages/Dashboard';
 import AllTests from './pages/AllTests';
+import TestDetails from './pages/TestDetails';
 import './App.css';
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
         {/* App routes */}
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/all-tests" element={<AllTests />} />
+        <Route path="/test/:testId" element={<TestDetails />} />
       </Routes>
     </Router>
   );
