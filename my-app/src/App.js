@@ -7,6 +7,8 @@ import ExamSelection from './pages/ExamSelection';
 import Dashboard from './pages/Dashboard';
 import AllTests from './pages/AllTests';
 import TestDetails from './pages/TestDetails';
+import TestScreen from './pages/TestScreen';
+import TestResult from './pages/TestResult';
 import './App.css';
 
 function App() {
@@ -26,6 +28,8 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/all-tests" element={<AllTests />} />
         <Route path="/test/:testId" element={<TestDetails />} />
+        <Route path="/test/:testId/questions" element={<TestScreen />} />
+        <Route path="/test/:testId/result" element={<TestResult />} />
       </Routes>
     </Router>
   );
