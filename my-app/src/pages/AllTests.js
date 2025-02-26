@@ -6,209 +6,235 @@ import typography from '../styles/foundation/typography';
 
 const AllTests = () => {
   const navigate = useNavigate();
-  const [activeCategory, setActiveCategory] = useState('all');
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeFilter, setActiveFilter] = useState('all');
 
   useEffect(() => {
     fetchTests();
-  }, [activeCategory]);
+  }, [activeFilter]);
 
   const fetchTests = async () => {
     try {
       setLoading(true);
-      let query = supabase
-        .from('exam_tests')
-        .select(`
-          *,
-          exam:exams(name),
-          user_tests(
-            score,
-            status,
-            completed_at
-          )
-        `);
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        navigate('/login');
+        return;
+      }
 
-      if (activeCategory === 'recommended') {
-        query = query.eq('type', 'recommended');
-      } else if (activeCategory === 'custom') {
-        query = query.eq('type', 'custom');
+      let query = supabase.from('exam_tests');
+
+      switch (activeFilter) {
+        case 'recommended':
+          query = query
+            .select('*')
+            .eq('type', 'recommended');
+          break;
+        case 'custom':
+          query = query
+            .select('*')
+            .eq('type', 'custom');
+          break;
+        case 'completed':
+          query = query
+            .select(`
+              *,
+              user_tests!inner(
+                score,
+                status
+              )
+            `)
+            .eq('user_tests.user_id', user.id)
+            .eq('user_tests.status', 'completed');
+          break;
+        default:
+          query = query.select('*');
       }
 
       const { data, error } = await query;
-      
       if (error) throw error;
-      setTests(data);
+      setTests(data || []);
     } catch (error) {
-      console.error('Error fetching tests:', error);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleBackClick = () => {
-    navigate('/dashboard');
-  };
-
-  const handleTestClick = (testId) => {
-    navigate(`/test/${testId}`);
-  };
+  const filters = [
+    { id: 'all', label: 'All Tests' },
+    { id: 'recommended', label: 'Recommended' },
+    { id: 'custom', label: 'Custom Tests' },
+    { id: 'completed', label: 'Completed' },
+  ];
 
   return (
     <div style={styles.container}>
-      {/* Header */}
       <div style={styles.header}>
-        <span onClick={handleBackClick} style={styles.backButton}>←</span>
-        <span style={typography.textLgBold}>All Tests</span>
+        <button 
+          onClick={() => navigate('/dashboard')} 
+          style={styles.backButton}
+        >
+          ← Back
+        </button>
+        <h1 style={typography.displayMdBold}>All Tests</h1>
       </div>
 
-      {/* Categories */}
-      <div style={styles.categories}>
-        <button 
-          style={{
-            ...styles.categoryButton,
-            ...(activeCategory === 'all' && styles.activeCategoryButton)
-          }}
-          onClick={() => setActiveCategory('all')}
-        >
-          All test
-        </button>
-        <button 
-          style={{
-            ...styles.categoryButton,
-            ...(activeCategory === 'recommended' && styles.activeCategoryButton)
-          }}
-          onClick={() => setActiveCategory('recommended')}
-        >
-          Recommended test
-        </button>
-        <button 
-          style={{
-            ...styles.categoryButton,
-            ...(activeCategory === 'custom' && styles.activeCategoryButton)
-          }}
-          onClick={() => setActiveCategory('custom')}
-        >
-          Custom test
-        </button>
-      </div>
-
-      {/* Test List */}
-      <div style={styles.testList}>
-        {loading ? (
-          <p style={typography.textMdRegular}>Loading tests...</p>
-        ) : tests.length === 0 ? (
-          <div style={styles.noTests}>
-            <p style={{...typography.textLgRegular, color: colors.textSecondary}}>
-              No tests found
-            </p>
+      {loading ? (
+        <div style={styles.loading}>Loading tests...</div>
+      ) : error ? (
+        <div style={styles.error}>{error}</div>
+      ) : (
+        <>
+          <div style={styles.filters}>
+            {filters.map(filter => (
+              <button
+                key={filter.id}
+                onClick={() => setActiveFilter(filter.id)}
+                style={{
+                  ...styles.filterButton,
+                  ...(activeFilter === filter.id && styles.activeFilter)
+                }}
+              >
+                {filter.label}
+              </button>
+            ))}
           </div>
-        ) : (
-          tests.map((test) => (
-            <div 
-              key={test.id} 
-              style={styles.testItem}
-              onClick={() => handleTestClick(test.id)}
-            >
-              <div>
-                <h3 style={typography.textLgMedium}>{test.title}</h3>
-                <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
-                  {test.total_questions} questions · {test.duration}hrs
+
+          <div style={styles.testGrid}>
+            {tests.length === 0 ? (
+              <div style={styles.noTests}>
+                <p style={typography.textLgRegular}>
+                  No {activeFilter} tests found
                 </p>
               </div>
-              <div style={styles.rightContent}>
-                {test.user_tests?.[0]?.status === 'completed' ? (
-                  <div style={styles.score}>
-                    <span style={styles.checkIcon}>✓</span>
-                    Score {test.user_tests[0].score}/{test.total_questions}
+            ) : (
+              tests.map(test => (
+                <div key={test.id} style={styles.testCard}>
+                  <div style={styles.testInfo}>
+                    <h3 style={typography.textLgMedium}>{test.test_name}</h3>
+                    <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
+                      {test.total_questions} questions · {test.duration} mins
+                    </p>
+                    {test.user_tests && (
+                      <p style={styles.score}>
+                        Score: {test.user_tests[0]?.score}/{test.total_questions}
+                      </p>
+                    )}
                   </div>
-                ) : (
-                  <span style={styles.arrow}>›</span>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+                  <button 
+                    onClick={() => navigate(`/test/${test.id}`)}
+                    style={styles.startButton}
+                  >
+                    {test.user_tests ? 'View Result' : 'Start Test'} →
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };
 
 const styles = {
   container: {
-    padding: '16px',
-    backgroundColor: colors.backgroundPrimary,
-    minHeight: '100vh',
+    padding: '20px',
+    maxWidth: '1200px',
+    margin: '0 auto',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    marginBottom: '24px',
+    gap: '16px',
+    marginBottom: '32px',
   },
   backButton: {
-    fontSize: '24px',
-    cursor: 'pointer',
+    padding: '8px 16px',
+    borderRadius: '8px',
+    backgroundColor: colors.backgroundSecondary,
     color: colors.textPrimary,
+    border: 'none',
+    cursor: 'pointer',
+    ...typography.textMdMedium,
   },
-  categories: {
+  filters: {
     display: 'flex',
-    gap: '8px',
+    gap: '12px',
     marginBottom: '24px',
     overflowX: 'auto',
-    paddingBottom: '8px',
+    padding: '4px',
   },
-  categoryButton: {
+  filterButton: {
     padding: '8px 16px',
     borderRadius: '20px',
-    border: `1px solid ${colors.brandPrimary}`,
+    border: `1px solid ${colors.textSecondary}`,
     backgroundColor: 'transparent',
-    color: colors.brandPrimary,
-    whiteSpace: 'nowrap',
+    color: colors.textPrimary,
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
     ...typography.textSmMedium,
   },
-  activeCategoryButton: {
+  activeFilter: {
     backgroundColor: colors.brandPrimary,
     color: colors.backgroundPrimary,
     border: 'none',
   },
-  testList: {
+  testGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+    gap: '20px',
+  },
+  testCard: {
+    padding: '20px',
+    borderRadius: '12px',
+    backgroundColor: colors.backgroundPrimary,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    gap: '16px',
   },
-  testItem: {
+  testInfo: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px 0',
-    borderBottom: `1px solid ${colors.backgroundSecondary}`,
-    cursor: 'pointer',
-  },
-  rightContent: {
-    display: 'flex',
-    alignItems: 'center',
-  },
-  score: {
-    display: 'flex',
-    alignItems: 'center',
+    flexDirection: 'column',
     gap: '4px',
-    color: colors.accentSuccess,
-    ...typography.textSmRegular,
   },
-  checkIcon: {
-    color: colors.accentSuccess,
+  startButton: {
+    padding: '12px 24px',
+    borderRadius: '8px',
+    backgroundColor: colors.brandPrimary,
+    color: colors.backgroundPrimary,
+    border: 'none',
+    cursor: 'pointer',
+    ...typography.textMdBold,
+    alignSelf: 'flex-start',
   },
-  arrow: {
-    fontSize: '24px',
+  loading: {
+    textAlign: 'center',
+    padding: '40px',
     color: colors.textSecondary,
+    ...typography.textLgRegular,
+  },
+  error: {
+    textAlign: 'center',
+    padding: '40px',
+    color: colors.accentError,
+    ...typography.textMdRegular,
   },
   noTests: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '40px 0',
+    gridColumn: '1 / -1',
+    textAlign: 'center',
+    padding: '40px',
+    color: colors.textSecondary,
+  },
+  score: {
+    color: colors.accentSuccess,
+    ...typography.textSmMedium,
+    marginTop: '4px',
   },
 };
 
