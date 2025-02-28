@@ -9,33 +9,79 @@ const TestDetails = () => {
   const { testId } = useParams();
   const [testData, setTestData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
+    console.log("TestDetails component mounted with testId:", testId);
     fetchTestDetails();
   }, [testId]);
 
   const fetchTestDetails = async () => {
     try {
       setLoading(true);
+      console.log("Fetching test details for testId:", testId);
+      
+      // Get the current user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setError("User not authenticated");
+        setLoading(false);
+        return;
+      }
+      
+      // First, check if the test exists
+      const { data: testCheck, error: testCheckError } = await supabase
+        .from('exam_tests')
+        .select('id')
+        .eq('id', testId)
+        .single();
+        
+      if (testCheckError) {
+        console.error("Error checking test existence:", testCheckError);
+        throw testCheckError;
+      }
+      
+      if (!testCheck) {
+        console.error("Test not found with ID:", testId);
+        setError("Test not found");
+        setLoading(false);
+        return;
+      }
+      
+      // If test exists, fetch full details
       const { data, error } = await supabase
         .from('exam_tests')
         .select(`
           *,
-          exam:exams(name),
+          exam:exam_id(exam_name),
           user_tests(
             id,
             score,
             status,
-            completed_at
+            end_time
           )
         `)
         .eq('id', testId)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error fetching test details:", error);
+        throw error;
+      }
+      
+      console.log("Test data fetched:", data);
+      
+      // Get only this user's test attempts
+      if (data.user_tests && data.user_tests.length > 0) {
+        const userTests = data.user_tests.filter(test => test.user_id === user.id);
+        data.user_tests = userTests;
+      }
+      
       setTestData(data);
     } catch (error) {
-      console.error('Error fetching test details:', error);
+      console.error('Error in fetchTestDetails:', error);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -43,13 +89,23 @@ const TestDetails = () => {
 
   const handleStartTest = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setError("User not authenticated");
+        return;
+      }
+      
       // Create a new user_test entry
       const { data, error } = await supabase
         .from('user_tests')
         .insert({
-          test_id: testId,
+          user_id: user.id,
+          exam_test_id: testId,
           status: 'in_progress',
-          started_at: new Date().toISOString()
+          start_time: new Date().toISOString(),
+          total_questions_answered: 0,
+          score: 0
         })
         .select()
         .single();
@@ -60,6 +116,7 @@ const TestDetails = () => {
       navigate(`/test/${testId}/questions`);
     } catch (error) {
       console.error('Error starting test:', error);
+      setError(error.message);
     }
   };
 
@@ -76,11 +133,37 @@ const TestDetails = () => {
   };
 
   if (loading) {
-    return <div style={styles.container}>Loading...</div>;
+    return <div style={styles.container}>Loading test details...</div>;
+  }
+
+  if (error) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.errorContainer}>
+          <h2 style={typography.displaySmBold}>Error</h2>
+          <p style={typography.textMdRegular}>{error}</p>
+          <button onClick={handleBack} style={styles.backButton}>
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (!testData) {
-    return <div style={styles.container}>Test not found</div>;
+    return (
+      <div style={styles.container}>
+        <div style={styles.errorContainer}>
+          <h2 style={typography.displaySmBold}>Test Not Found</h2>
+          <p style={typography.textMdRegular}>
+            We couldn't find the test you're looking for.
+          </p>
+          <button onClick={handleBack} style={styles.backButton}>
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const lastAttempt = testData.user_tests?.[0];
@@ -99,13 +182,13 @@ const TestDetails = () => {
           {testData.type === 'custom' && <span>✏️</span>}
         </div>
 
-        <h1 style={typography.displayMdBold}>{testData.title}</h1>
+        <h1 style={typography.displayMdBold}>{testData.test_name}</h1>
 
         <div style={styles.detailsContainer}>
           <h2 style={typography.displayLgBold}>
             {testData.total_questions} Questions
           </h2>
-          <p style={typography.textLgRegular}>{testData.duration} hours</p>
+          <p style={typography.textLgRegular}>{testData.duration} minutes</p>
         </div>
 
         <div style={styles.bottomIconContainer}>
@@ -152,6 +235,19 @@ const styles = {
     padding: '20px',
     minHeight: '100vh',
     backgroundColor: colors.backgroundSecondary,
+  },
+  errorContainer: {
+    backgroundColor: colors.backgroundPrimary,
+    borderRadius: '12px',
+    padding: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '16px',
+    textAlign: 'center',
+    maxWidth: '500px',
+    margin: '0 auto',
+    marginTop: '40px',
   },
   backButton: {
     background: 'none',
