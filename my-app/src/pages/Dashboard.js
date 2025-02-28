@@ -433,13 +433,7 @@ const Dashboard = () => {
                     </div>
                   ) : (
                     <div style={styles.testCardFooter}>
-                      <button 
-                        style={styles.startTestButton}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/test/${test.id}`);
-                        }}
-                      >
+                      <button style={styles.startTestButton}>
                         Start Test
                       </button>
                     </div>
