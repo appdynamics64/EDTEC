@@ -259,6 +259,9 @@ const TestScreen = () => {
   const handleNext = () => {
     if (currentQuestion < questions.length - 1) {
       setCurrentQuestion(prev => prev + 1);
+    } else {
+      // If we're on the last question, show the finish modal
+      setShowFinishModal(true);
     }
   };
 

@@ -1,56 +1,62 @@
 import React from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 
 const TestResult = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { testId } = useParams();
   const { score, totalQuestions, attempted, correct, wrong } = location.state || {
-    score: 20,
-    totalQuestions: 300,
-    attempted: 40,
-    correct: 20,
-    wrong: 20
+    score: 0,
+    totalQuestions: 0,
+    attempted: 0,
+    correct: 0,
+    wrong: 0
+  };
+
+  const calculatePercentage = () => {
+    return totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
   };
 
   return (
     <div style={styles.container}>
       <div style={styles.content}>
-        <h1 style={styles.title}>Test completed</h1>
+        <h1 style={styles.title}>Test Results</h1>
         
         <div style={styles.scoreSection}>
-          <h2 style={styles.scoreLabel}>Score</h2>
-          <p style={styles.scoreValue}>{score}/{totalQuestions}</p>
+          <h2 style={styles.scoreLabel}>Your Score</h2>
+          <p style={styles.scoreValue}>{calculatePercentage()}%</p>
+          <p style={styles.scoreDetail}>({score}/{totalQuestions} points)</p>
         </div>
 
         <div style={styles.statsContainer}>
           <div style={styles.statItem}>
-            <span style={styles.statLabel}>Attempted:</span>
+            <span style={styles.statLabel}>Questions Attempted</span>
             <span style={styles.statValue}>{attempted}/{totalQuestions}</span>
           </div>
           <div style={styles.statItem}>
-            <span style={styles.statLabel}>Correct:</span>
-            <span style={styles.statValue}>{correct}/{totalQuestions}</span>
+            <span style={styles.statLabel}>Correct Answers</span>
+            <span style={{...styles.statValue, color: colors.success}}>{correct}</span>
           </div>
           <div style={styles.statItem}>
-            <span style={styles.statLabel}>Wrong:</span>
-            <span style={styles.statValue}>{wrong}/{totalQuestions}</span>
+            <span style={styles.statLabel}>Wrong Answers</span>
+            <span style={{...styles.statValue, color: colors.error}}>{wrong}</span>
           </div>
         </div>
 
         <div style={styles.buttonContainer}>
           <button 
-            onClick={() => navigate('./solutions')}
+            onClick={() => navigate(`/test/${testId}/solutions`)}
             style={styles.solutionButton}
           >
-            See solution
+            View Solutions
           </button>
           <button 
             onClick={() => navigate('/dashboard')}
             style={styles.homeButton}
           >
-            Home
+            Back to Dashboard
           </button>
         </div>
       </div>
@@ -78,22 +84,33 @@ const styles = {
     ...typography.displayMdBold,
   },
   scoreSection: {
-    marginBottom: '32px',
+    marginBottom: '40px',
+    padding: '24px',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: '16px',
   },
   scoreLabel: {
-    color: colors.backgroundPrimary,
+    color: colors.textPrimary,
     marginBottom: '8px',
-    ...typography.displayLgBold,
+    ...typography.textLgBold,
   },
   scoreValue: {
-    color: colors.backgroundPrimary,
-    ...typography.displayXlBold,
+    color: colors.brandPrimary,
+    ...typography.display2XlBold,
+    marginBottom: '4px',
+  },
+  scoreDetail: {
+    color: colors.textSecondary,
+    ...typography.textMdRegular,
   },
   statsContainer: {
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
-    marginBottom: '48px',
+    marginBottom: '40px',
+    padding: '24px',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: '16px',
   },
   statItem: {
     display: 'flex',
@@ -101,12 +118,12 @@ const styles = {
     alignItems: 'center',
   },
   statLabel: {
-    color: colors.backgroundPrimary,
+    color: colors.textPrimary,
     opacity: 0.8,
     ...typography.textLgRegular,
   },
   statValue: {
-    color: colors.backgroundPrimary,
+    color: colors.textPrimary,
     ...typography.textLgRegular,
   },
   buttonContainer: {
