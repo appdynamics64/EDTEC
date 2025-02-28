@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
@@ -11,13 +11,11 @@ const AllTests = () => {
   const [error, setError] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
 
-  useEffect(() => {
-    fetchTests();
-  }, [activeFilter]);
-
-  const fetchTests = async () => {
+  const fetchTests = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
+      
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
@@ -41,28 +39,46 @@ const AllTests = () => {
         case 'completed':
           query = query
             .select(`
-              *,
-              user_tests!inner(
-                score,
-                status
-              )
+              id, 
+              test_name, 
+              total_questions,
+              duration,
+              is_active,
+              created_at,
+              user_tests(id, score, status)
             `)
             .eq('user_tests.user_id', user.id)
             .eq('user_tests.status', 'completed');
           break;
         default:
           query = query.select('*');
+          break;
       }
 
       const { data, error } = await query;
+      
       if (error) throw error;
-      setTests(data || []);
+      
+      const processedTests = (data || []).map(test => ({
+        ...test,
+        test_name: test.test_name || 'Unnamed Test',
+        total_questions: test.total_questions || 0,
+        duration: test.duration || 0,
+        user_tests: Array.isArray(test.user_tests) ? test.user_tests : []
+      }));
+      
+      setTests(processedTests);
     } catch (error) {
-      setError(error.message);
+      console.error('Error fetching tests:', error);
+      setError(error.message || 'Failed to load tests');
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeFilter, navigate]);
+
+  useEffect(() => {
+    fetchTests();
+  }, [fetchTests]);
 
   const filters = [
     { id: 'all', label: 'All Tests' },
@@ -70,6 +86,33 @@ const AllTests = () => {
     { id: 'custom', label: 'Custom Tests' },
     { id: 'completed', label: 'Completed' },
   ];
+
+  const renderTestCard = (test) => {
+    const hasUserTests = Array.isArray(test.user_tests) && test.user_tests.length > 0;
+    const score = hasUserTests ? (test.user_tests[0]?.score || 0) : 0;
+    
+    return (
+      <div key={test.id} style={styles.testCard}>
+        <div style={styles.testInfo}>
+          <h3 style={typography.textLgMedium}>{test.test_name}</h3>
+          <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
+            {test.total_questions} questions · {test.duration} mins
+          </p>
+          {hasUserTests && (
+            <p style={styles.score}>
+              Score: {score}/{test.total_questions}
+            </p>
+          )}
+        </div>
+        <button 
+          onClick={() => navigate(`/test/${test.id}`)}
+          style={styles.startButton}
+        >
+          {hasUserTests ? 'View Result' : 'Start Test'} →
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div style={styles.container}>
@@ -107,32 +150,16 @@ const AllTests = () => {
           <div style={styles.testGrid}>
             {tests.length === 0 ? (
               <div style={styles.noTests}>
-                <p style={typography.textLgRegular}>
-                  No {activeFilter} tests found
-                </p>
+                {activeFilter === 'all' ? (
+                  "No tests available yet. Check back later!"
+                ) : activeFilter === 'completed' ? (
+                  "You haven't completed any tests yet."
+                ) : (
+                  `No ${activeFilter} tests available.`
+                )}
               </div>
             ) : (
-              tests.map(test => (
-                <div key={test.id} style={styles.testCard}>
-                  <div style={styles.testInfo}>
-                    <h3 style={typography.textLgMedium}>{test.test_name}</h3>
-                    <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
-                      {test.total_questions} questions · {test.duration} mins
-                    </p>
-                    {test.user_tests && (
-                      <p style={styles.score}>
-                        Score: {test.user_tests[0]?.score}/{test.total_questions}
-                      </p>
-                    )}
-                  </div>
-                  <button 
-                    onClick={() => navigate(`/test/${test.id}`)}
-                    style={styles.startButton}
-                  >
-                    {test.user_tests ? 'View Result' : 'Start Test'} →
-                  </button>
-                </div>
-              ))
+              tests.map(test => renderTestCard(test))
             )}
           </div>
         </>
