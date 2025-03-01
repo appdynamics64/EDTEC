@@ -77,7 +77,7 @@ function App() {
         />
         <Route path="/test/:testId" element={<TestDetails />} />
         <Route path="/test/:testId/questions" element={<TestScreen />} />
-        <Route path="/test/:testId/result" element={<TestResult />} />
+        <Route path="/test-result/:testId" element={<TestResult />} />
         <Route path="/admin" element={<AdminConsole />} />
         <Route path="/admin/exam/:examId" element={<ExamDetails />} />
         <Route path="/admin/question/:questionId" element={<QuestionDetails />} />
