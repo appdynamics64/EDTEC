@@ -14,6 +14,8 @@ import AdminConsole from './pages/AdminConsole';
 import ExamDetails from './pages/ExamDetails';
 import QuestionDetails from './pages/QuestionDetails';
 import AuthCallback from './pages/AuthCallback';
+import TestsListingPage from './pages/TestsListingPage';
+import AdminDebugger from './pages/AdminDebugger';
 import './App.css';
 
 const ProtectedRoute = ({ children }) => {
@@ -71,7 +73,7 @@ function App() {
           path="/tests"
           element={
             <ProtectedRoute>
-              <AllTests />
+              <TestsListingPage />
             </ProtectedRoute>
           }
         />
@@ -81,6 +83,14 @@ function App() {
         <Route path="/admin" element={<AdminConsole />} />
         <Route path="/admin/exam/:examId" element={<ExamDetails />} />
         <Route path="/admin/question/:questionId" element={<QuestionDetails />} />
+        <Route
+          path="/admin/debugger"
+          element={
+            <ProtectedRoute>
+              <AdminDebugger />
+            </ProtectedRoute>
+          }
+        />
         
         {/* Redirect root to dashboard or login */}
         <Route
