@@ -19,6 +19,42 @@ const TimeIcon = () => {
   }
 };
 
+const DashboardBanner = ({ userName, onStartQuickTest }) => {
+  return (
+    <div style={styles.bannerContainer}>
+      <div style={styles.bannerContent}>
+        <div style={styles.bannerTextContent}>
+          <h2 style={styles.bannerTitle}>Ready to challenge yourself, {userName}?</h2>
+          <p style={styles.bannerDescription}>
+            Improve your skills with daily practice tests tailored to your learning journey.
+          </p>
+          <div style={styles.bannerActions}>
+            <button 
+              style={styles.bannerPrimaryButton}
+              onClick={onStartQuickTest}
+            >
+              Start Quick Test
+            </button>
+            <button style={styles.bannerSecondaryButton}>
+              View Study Plan
+            </button>
+          </div>
+        </div>
+        <div style={styles.bannerImageContainer}>
+          <img 
+            src="/assets/dashboard-illustration.svg" 
+            alt="Study illustration" 
+            style={styles.bannerImage}
+            onError={(e) => {
+              e.target.style.display = 'none';
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [userName, setUserName] = useState(null);
@@ -34,12 +70,40 @@ const Dashboard = () => {
   const [createTestType, setCreateTestType] = useState(null);
   const [greeting, setGreeting] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [recentTests, setRecentTests] = useState([]);
+  const [stats, setStats] = useState({
+    testsCompleted: 0,
+    averageScore: 0,
+    totalQuestions: 0,
+    timeSpent: 0
+  });
+  const [quickTestOptions, setQuickTestOptions] = useState({
+    subject: 'all',
+    difficulty: 'mixed',
+    questionCount: 10
+  });
+  const [customTestOptions, setCustomTestOptions] = useState({
+    subjects: [],
+    topics: [],
+    difficulty: 'mixed',
+    questionCount: 20,
+    timeLimit: 30
+  });
+  const [availableSubjects, setAvailableSubjects] = useState([]);
+  const [availableTopics, setAvailableTopics] = useState([]);
+  const [quickTestLoading, setQuickTestLoading] = useState(false);
+  const [customTestLoading, setCustomTestLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchUserProfile();
     checkAdminStatus();
     fetchTests();
     updateGreeting();
+    fetchRecentTests();
+    fetchStats();
+    fetchAvailableSubjects();
+    fetchAvailableTopics();
   }, [activeCategory]);
 
   const fetchUserProfile = async () => {
@@ -185,6 +249,316 @@ const Dashboard = () => {
     }
   };
 
+  const fetchRecentTests = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        navigate('/');
+        return;
+      }
+
+      const { data: testsData, error: testsError } = await supabase
+        .from('user_tests')
+        .select(`
+          id,
+          created_at,
+          completed_at,
+          score,
+          total_questions,
+          time_spent,
+          tests (
+            id,
+            name,
+            subject
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+        
+      if (testsError) throw testsError;
+      
+      setRecentTests(testsData || []);
+    } catch (error) {
+      console.error('Error fetching recent tests:', error);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        navigate('/');
+        return;
+      }
+
+      const { data: testsData, error: testsError } = await supabase
+        .from('user_tests')
+        .select(`
+          id,
+          created_at,
+          completed_at,
+          score,
+          total_questions,
+          time_spent,
+          tests (
+            id,
+            name,
+            subject
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+        
+      if (testsError) throw testsError;
+      
+      const completed = testsData.filter(test => test.completed_at);
+      const totalScore = completed.reduce((sum, test) => sum + test.score, 0);
+      const totalQuestions = completed.reduce((sum, test) => sum + test.total_questions, 0);
+      const totalTime = completed.reduce((sum, test) => sum + (test.time_spent || 0), 0);
+      
+      setStats({
+        testsCompleted: completed.length,
+        averageScore: completed.length ? Math.round((totalScore / completed.length) * 100) / 100 : 0,
+        totalQuestions,
+        timeSpent: totalTime
+      });
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
+
+  const fetchAvailableSubjects = async () => {
+    try {
+      const { data: subjectsData, error: subjectsError } = await supabase
+        .from('subjects')
+        .select('id, name')
+        .order('name');
+        
+      if (subjectsError) throw subjectsError;
+      
+      setAvailableSubjects(subjectsData || []);
+    } catch (error) {
+      console.error('Error fetching available subjects:', error);
+    }
+  };
+
+  const fetchAvailableTopics = async () => {
+    try {
+      const { data: topicsData, error: topicsError } = await supabase
+        .from('topics')
+        .select('id, name, subject_id')
+        .order('name');
+        
+      if (topicsError) throw topicsError;
+      
+      setAvailableTopics(topicsData || []);
+    } catch (error) {
+      console.error('Error fetching available topics:', error);
+    }
+  };
+
+  const handleQuickTestOptionChange = (field, value) => {
+    setQuickTestOptions(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+  
+  const handleCustomTestOptionChange = (field, value) => {
+    setCustomTestOptions(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+  
+  const startQuickTest = async () => {
+    try {
+      setQuickTestLoading(true);
+      setError(null);
+      
+      // Create a new test
+      const { data: testData, error: testError } = await supabase
+        .from('tests')
+        .insert({
+          name: `Quick Test - ${new Date().toLocaleDateString()}`,
+          description: `Quick ${quickTestOptions.questionCount} question test with ${quickTestOptions.difficulty} difficulty`,
+          subject: quickTestOptions.subject,
+          difficulty: quickTestOptions.difficulty,
+          is_quick_test: true
+        })
+        .select()
+        .single();
+        
+      if (testError) throw testError;
+      
+      // Fetch random questions based on options
+      const questionQuery = supabase
+        .from('questions')
+        .select('id')
+        .order('id', { ascending: false });
+        
+      // Apply subject filter if not 'all'
+      if (quickTestOptions.subject !== 'all') {
+        questionQuery.eq('subject_id', quickTestOptions.subject);
+      }
+      
+      // Apply difficulty filter if not 'mixed'
+      if (quickTestOptions.difficulty !== 'mixed') {
+        questionQuery.eq('difficulty', quickTestOptions.difficulty);
+      }
+      
+      // Limit to requested number of questions
+      questionQuery.limit(quickTestOptions.questionCount);
+      
+      const { data: questionsData, error: questionsError } = await questionQuery;
+      
+      if (questionsError) throw questionsError;
+      
+      if (!questionsData || questionsData.length === 0) {
+        throw new Error('No questions available with the selected criteria');
+      }
+      
+      // Create test questions
+      const testQuestions = questionsData.map((q, index) => ({
+        test_id: testData.id,
+        question_id: q.id,
+        order: index + 1
+      }));
+      
+      const { error: testQuestionsError } = await supabase
+        .from('test_questions')
+        .insert(testQuestions);
+        
+      if (testQuestionsError) throw testQuestionsError;
+      
+      // Create user test record
+      const { data: userTestData, error: userTestError } = await supabase
+        .from('user_tests')
+        .insert({
+          user_id: userData.id,
+          test_id: testData.id,
+          total_questions: questionsData.length
+        })
+        .select()
+        .single();
+        
+      if (userTestError) throw userTestError;
+      
+      // Navigate to test
+      navigate(`/test/${testData.id}/questions?user_test_id=${userTestData.id}`);
+      
+    } catch (error) {
+      console.error('Error starting quick test:', error);
+      setError(error.message || 'Failed to start quick test. Please try again.');
+    } finally {
+      setQuickTestLoading(false);
+    }
+  };
+  
+  const startCustomTest = async () => {
+    try {
+      setCustomTestLoading(true);
+      setError(null);
+      
+      if (customTestOptions.subjects.length === 0) {
+        throw new Error('Please select at least one subject');
+      }
+      
+      // Create a new test
+      const { data: testData, error: testError } = await supabase
+        .from('tests')
+        .insert({
+          name: `Custom Test - ${new Date().toLocaleDateString()}`,
+          description: `Custom ${customTestOptions.questionCount} question test with ${customTestOptions.difficulty} difficulty`,
+          is_custom_test: true,
+          time_limit: customTestOptions.timeLimit
+        })
+        .select()
+        .single();
+        
+      if (testError) throw testError;
+      
+      // Fetch random questions based on options
+      const questionQuery = supabase
+        .from('questions')
+        .select('id')
+        .order('id', { ascending: false });
+        
+      // Apply subject filter
+      questionQuery.in('subject_id', customTestOptions.subjects);
+      
+      // Apply topic filter if any topics selected
+      if (customTestOptions.topics.length > 0) {
+        questionQuery.in('topic_id', customTestOptions.topics);
+      }
+      
+      // Apply difficulty filter if not 'mixed'
+      if (customTestOptions.difficulty !== 'mixed') {
+        questionQuery.eq('difficulty', customTestOptions.difficulty);
+      }
+      
+      // Limit to requested number of questions
+      questionQuery.limit(customTestOptions.questionCount);
+      
+      const { data: questionsData, error: questionsError } = await questionQuery;
+      
+      if (questionsError) throw questionsError;
+      
+      if (!questionsData || questionsData.length === 0) {
+        throw new Error('No questions available with the selected criteria');
+      }
+      
+      // Create test questions
+      const testQuestions = questionsData.map((q, index) => ({
+        test_id: testData.id,
+        question_id: q.id,
+        order: index + 1
+      }));
+      
+      const { error: testQuestionsError } = await supabase
+        .from('test_questions')
+        .insert(testQuestions);
+        
+      if (testQuestionsError) throw testQuestionsError;
+      
+      // Create user test record
+      const { data: userTestData, error: userTestError } = await supabase
+        .from('user_tests')
+        .insert({
+          user_id: userData.id,
+          test_id: testData.id,
+          total_questions: questionsData.length
+        })
+        .select()
+        .single();
+        
+      if (userTestError) throw userTestError;
+      
+      // Navigate to test
+      navigate(`/test/${testData.id}/questions?user_test_id=${userTestData.id}`);
+      
+    } catch (error) {
+      console.error('Error starting custom test:', error);
+      setError(error.message || 'Failed to start custom test. Please try again.');
+    } finally {
+      setCustomTestLoading(false);
+    }
+  };
+  
+  const formatTime = (minutes) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    }
+    return `${mins} minutes`;
+  };
+
   return (
     <div style={styles.container}>
       {/* Top Navigation Bar */}
@@ -245,6 +619,12 @@ const Dashboard = () => {
       </div>
 
       <div style={styles.contentContainer}>
+        {/* Add the banner here */}
+        <DashboardBanner 
+          userName={userName || 'Student'} 
+          onStartQuickTest={startQuickTest}
+        />
+
         {/* Welcome Section with Stats */}
         <div style={styles.welcomeSection}>
           <div style={styles.greetingCard}>
@@ -269,7 +649,7 @@ const Dashboard = () => {
               <div style={styles.statIcon}>📊</div>
               <div style={styles.statInfo}>
                 <h3 style={typography.textLgBold}>
-                  {tests.filter(t => t.user_tests).length}
+                  {stats.testsCompleted}
                 </h3>
                 <p style={typography.textSmRegular}>Tests Completed</p>
               </div>
@@ -279,9 +659,9 @@ const Dashboard = () => {
               <div style={styles.statIcon}>⏱️</div>
               <div style={styles.statInfo}>
                 <h3 style={typography.textLgBold}>
-                  {tests.filter(t => t.type === 'recommended').length}
+                  {formatTime(stats.timeSpent)}
                 </h3>
-                <p style={typography.textSmRegular}>Available Tests</p>
+                <p style={typography.textSmRegular}>Time Spent</p>
               </div>
             </div>
           </div>
@@ -853,6 +1233,88 @@ const styles = {
     ':hover': {
       backgroundColor: '#3f49cb',
     }
+  },
+  bannerContainer: {
+    backgroundColor: colors.brandPrimary + '10',
+    borderRadius: '16px',
+    padding: '24px',
+    marginBottom: '32px',
+    border: `1px solid ${colors.brandPrimary}30`,
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  bannerContent: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '24px',
+    '@media (max-width: 768px)': {
+      flexDirection: 'column',
+      textAlign: 'center',
+    },
+  },
+  bannerTextContent: {
+    flex: '1',
+    zIndex: '1',
+  },
+  bannerTitle: {
+    ...typography.displaySmBold,
+    color: colors.textPrimary,
+    marginBottom: '12px',
+  },
+  bannerDescription: {
+    ...typography.textMdRegular,
+    color: colors.textSecondary,
+    marginBottom: '24px',
+    maxWidth: '500px',
+  },
+  bannerActions: {
+    display: 'flex',
+    gap: '12px',
+    '@media (max-width: 768px)': {
+      justifyContent: 'center',
+    },
+  },
+  bannerPrimaryButton: {
+    backgroundColor: colors.brandPrimary,
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '12px 20px',
+    ...typography.textMdBold,
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+    '&:hover': {
+      backgroundColor: '#3730a3',
+    },
+  },
+  bannerSecondaryButton: {
+    backgroundColor: 'transparent',
+    color: colors.brandPrimary,
+    border: `1px solid ${colors.brandPrimary}`,
+    borderRadius: '8px',
+    padding: '12px 20px',
+    ...typography.textMdBold,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    '&:hover': {
+      backgroundColor: colors.brandPrimary + '10',
+    },
+  },
+  bannerImageContainer: {
+    flex: '0 0 240px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    '@media (max-width: 768px)': {
+      display: 'none',
+    },
+  },
+  bannerImage: {
+    maxWidth: '100%',
+    height: 'auto',
+    objectFit: 'contain',
   },
 };
 
