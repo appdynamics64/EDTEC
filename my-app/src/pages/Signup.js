@@ -124,48 +124,25 @@ const Signup = () => {
   const handleSignup = async (e) => {
     e.preventDefault();
     
-    // Mark all fields as touched for validation
-    setTouched({
-      email: true,
-      password: true,
-      confirmPassword: true,
-      name: true
-    });
-    
-    if (!isFormValid()) {
-      return;
-    }
-
     try {
       setLoading(true);
       setError(null);
-
-      // First check if user exists in the users table
-      const { data: existingUser, error: checkError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email.toLowerCase())
-        .maybeSingle();
-
-      if (checkError) {
-        console.error('Error checking existing user:', checkError);
+      
+      // Validate form data
+      if (!email || !password || !name) {
+        setError('Please fill in all fields');
+        setLoading(false);
+        return;
       }
-
-      if (existingUser) {
-        // If user exists in users table but not in auth, delete the user record
-        const { error: deleteError } = await supabase
-          .from('users')
-          .delete()
-          .eq('email', email.toLowerCase());
-
-        if (deleteError) {
-          console.error('Error deleting existing user:', deleteError);
-          throw new Error('Error cleaning up existing user data');
-        }
+      
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
+        setLoading(false);
+        return;
       }
-
+      
       // Create user in Supabase Auth
-      const { data, error: signUpError } = await supabase.auth.signUp({
+      const { data: { user }, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -176,69 +153,37 @@ const Signup = () => {
         }
       });
       
-      console.log('Signup response:', { data, signUpError });
+      if (error) throw error;
       
-      if (signUpError) {
-        console.error('Signup error details:', signUpError);
-        throw signUpError;
-      }
-      
-      if (data?.user) {
-        console.log('User created:', data.user);
-        
-        try {
-          // Store user profile in users table
-          const { error: profileError } = await supabase
-            .from('users')
-            .insert({
-              id: data.user.id,
-              email: email.toLowerCase(),
-              name: name.trim(),
-              role: 'user',
-              email_verified: false
-            });
-            
-          if (profileError) {
-            console.error('Profile creation error:', profileError);
-            throw profileError;
-          }
-
-          // Store verification data in localStorage
-          localStorage.setItem('pendingVerificationEmail', email);
-          localStorage.setItem('signupTimestamp', Date.now().toString());
+      if (user) {
+        // Create user profile in users table
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: user.id,
+            email: user.email,
+            name: name,
+            role: 'user',
+            email_verified: false,
+            is_new_user: true,
+            created_at: new Date().toISOString()
+          });
           
-          // Navigate to confirmation page
-          navigate('/confirmation');
-        } catch (profileError) {
-          // If profile creation fails, clean up the auth user
-          await supabase.auth.signOut();
-          throw new Error(`Profile creation failed: ${profileError.message}`);
+        if (profileError) {
+          console.error('Error creating user profile:', profileError);
+          // Continue anyway, as the auth record was created successfully
         }
-      } else {
-        throw new Error('Failed to create user account - no user data returned');
+        
+        // Store email for verification page
+        localStorage.setItem('pendingVerificationEmail', email);
+        localStorage.setItem('signupTimestamp', Date.now().toString());
+        
+        // Redirect to confirmation page
+        navigate('/confirmation');
       }
     } catch (error) {
-      console.error('Full error details:', error);
-      
-      if (error.message?.includes('already registered')) {
-        setError('This email is already registered. Please use a different email or try signing in.');
-      } else if (error.message?.includes('rate limit')) {
-        setError('Too many signup attempts. Please try again later.');
-      } else if (error.message?.includes('stronger password')) {
-        setError('Please use a stronger password.');
-      } else if (error.message?.includes('valid email')) {
-        setError('Please enter a valid email address.');
-      } else if (error.status === 422) {
-        setError('Invalid email or password format.');
-      } else if (error.status === 429) {
-        setError('Too many attempts. Please try again later.');
-      } else if (error.message?.includes('duplicate key')) {
-        setError('This email is already registered. Please use a different email.');
-      } else if (error.message?.includes('Profile creation failed')) {
-        setError(error.message);
-      } else {
-        setError(`Failed to create your account: ${error.message || 'Unknown error'}`);
-      }
+      console.error('Signup error:', error);
+      setError(error.message || 'An error occurred during signup');
     } finally {
       setLoading(false);
     }

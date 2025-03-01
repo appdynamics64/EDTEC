@@ -313,43 +313,32 @@ const TestScreen = () => {
         }
       }
       
-      // If there's at least one in-progress test, use it
+      // If there's at least one in-progress test, use the most recent one
       if (existingTests && existingTests.length > 0) {
-        const existingTest = existingTests[0];
-        console.log("Using existing test:", existingTest);
+        const mostRecent = existingTests[0];
         
-        // Calculate how long ago the test was started
-        const startTime = new Date(existingTest.start_time || existingTest.created_at);
-        const minutesAgo = Math.round((Date.now() - startTime.getTime()) / (1000 * 60));
+        // Check if the test is older than 2 hours
+        const startTime = new Date(mostRecent.start_time || mostRecent.created_at);
+        const hoursElapsed = (Date.now() - startTime.getTime()) / (1000 * 60 * 60);
         
-        console.log("Test was started", minutesAgo, "minutes ago");
-        
-        // If test was started recently, show modal
-        if (minutesAgo < 120) {
-          setExistingSession({
-            id: existingTest.id,
-            startTime: startTime,
-            minutesAgo
-          });
-          setShowExistingSessionModal(true);
-        } else {
-          // If the test is older than 2 hours, mark it as abandoned and create a new one
+        if (hoursElapsed > 2) {
           console.log("Test is older than 2 hours, marking as abandoned");
           
           const { error: updateError } = await supabase
             .from('user_tests')
             .update({ status: 'abandoned' })
-            .eq('id', existingTest.id);
+            .eq('id', mostRecent.id);
             
           if (updateError) {
             console.error("Error abandoning old test:", updateError);
           }
           
-          // Create a new test
+          // Create a new test since the old one was abandoned
           return createNewTest(user.id);
         }
         
-        return existingTest;
+        console.log("Using existing test:", mostRecent);
+        return mostRecent;
       }
       
       // If no in-progress test exists, create a new one
@@ -360,12 +349,12 @@ const TestScreen = () => {
     }
   };
 
-  // Helper function to create a new test
+  // Helper function to create a new test with string ID
   const createNewTest = async (userId) => {
     console.log("Creating new test for user:", userId);
     
     try {
-      // Generate a unique ID to avoid conflicts
+      // Generate a unique string ID to avoid UUID validation issues
       const uniqueId = `test-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
       
       const { data: newTest, error: createError } = await supabase
