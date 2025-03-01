@@ -91,6 +91,16 @@ const AllTests = () => {
     const hasUserTests = Array.isArray(test.user_tests) && test.user_tests.length > 0;
     const score = hasUserTests ? (test.user_tests[0]?.score || 0) : 0;
     
+    const handleTestAction = () => {
+      if (hasUserTests) {
+        // Navigate to results page with the user_test_id
+        navigate(`/results/${test.user_tests[0].id}`);
+      } else {
+        // Navigate to test details page to start the test
+        navigate(`/test/${test.id}`);
+      }
+    };
+    
     return (
       <div key={test.id} style={styles.testCard}>
         <div style={styles.testInfo}>
@@ -105,7 +115,7 @@ const AllTests = () => {
           )}
         </div>
         <button 
-          onClick={() => navigate(`/test/${test.id}`)}
+          onClick={handleTestAction}
           style={styles.startButton}
         >
           {hasUserTests ? 'View Result' : 'Start Test'} →
