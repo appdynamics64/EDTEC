@@ -94,6 +94,7 @@ const Dashboard = () => {
   const [quickTestLoading, setQuickTestLoading] = useState(false);
   const [customTestLoading, setCustomTestLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     fetchUserProfile();
@@ -104,6 +105,22 @@ const Dashboard = () => {
     fetchStats();
     fetchAvailableSubjects();
     fetchAvailableTopics();
+    if (userData && userData.is_new_user) {
+      setShowOnboarding(true);
+      
+      const updateNewUserStatus = async () => {
+        try {
+          await supabase
+            .from('users')
+            .update({ is_new_user: false })
+            .eq('id', userData.id);
+        } catch (error) {
+          console.error('Error updating new user status:', error);
+        }
+      };
+      
+      updateNewUserStatus();
+    }
   }, [activeCategory]);
 
   const fetchUserProfile = async () => {
@@ -559,6 +576,9 @@ const Dashboard = () => {
     return `${mins} minutes`;
   };
 
+  const userNameDisplay = userName || 'User';
+  const userExamDisplay = userExam || null;
+
   return (
     <div style={styles.container}>
       {/* Top Navigation Bar */}
@@ -621,7 +641,7 @@ const Dashboard = () => {
       <div style={styles.contentContainer}>
         {/* Add the banner here */}
         <DashboardBanner 
-          userName={userName || 'Student'} 
+          userName={userNameDisplay} 
           onStartQuickTest={startQuickTest}
         />
 
@@ -634,10 +654,10 @@ const Dashboard = () => {
                   <TimeIcon />
                   <span style={typography.textSmRegular}>{greeting}</span>
                 </div>
-                <h2 style={typography.displayMdBold}>{userName || 'User'}</h2>
+                <h2 style={typography.displayMdBold}>{userNameDisplay}</h2>
                 <div style={styles.examBadge}>
                   <span style={typography.textSmMedium}>
-                    {userExam || 'Select an exam'}
+                    {userExamDisplay}
                   </span>
                 </div>
               </div>
@@ -847,6 +867,56 @@ const Dashboard = () => {
         }}
         type={createTestType}
       />
+
+      {showOnboarding && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.onboardingModal}>
+            <h2 style={typography.textXlBold}>Welcome to ExamPrep!</h2>
+            <p style={typography.textMdRegular}>
+              We're excited to help you prepare for your exams. Here's a quick overview of what you can do:
+            </p>
+            
+            <div style={styles.onboardingSteps}>
+              <div style={styles.onboardingStep}>
+                <div style={styles.stepNumber}>1</div>
+                <div style={styles.stepContent}>
+                  <h3 style={typography.textMdBold}>Browse Available Tests</h3>
+                  <p style={typography.textSmRegular}>
+                    Explore our collection of practice tests designed to help you prepare.
+                  </p>
+                </div>
+              </div>
+              
+              <div style={styles.onboardingStep}>
+                <div style={styles.stepNumber}>2</div>
+                <div style={styles.stepContent}>
+                  <h3 style={typography.textMdBold}>Take Practice Tests</h3>
+                  <p style={typography.textSmRegular}>
+                    Complete tests to assess your knowledge and identify areas for improvement.
+                  </p>
+                </div>
+              </div>
+              
+              <div style={styles.onboardingStep}>
+                <div style={styles.stepNumber}>3</div>
+                <div style={styles.stepContent}>
+                  <h3 style={typography.textMdBold}>Track Your Progress</h3>
+                  <p style={typography.textSmRegular}>
+                    Monitor your performance and see how you improve over time.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <button 
+              style={styles.onboardingButton}
+              onClick={() => setShowOnboarding(false)}
+            >
+              Get Started
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1321,6 +1391,63 @@ const styles = {
     maxWidth: '100%',
     height: 'auto',
     objectFit: 'contain',
+  },
+  onboardingModal: {
+    backgroundColor: colors.backgroundPrimary,
+    borderRadius: '16px',
+    padding: '32px',
+    maxWidth: '600px',
+    width: '90%',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+  },
+  onboardingSteps: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '24px',
+    margin: '32px 0',
+  },
+  onboardingStep: {
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'flex-start',
+  },
+  stepNumber: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    backgroundColor: colors.brandPrimary,
+    color: colors.backgroundPrimary,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...typography.textMdBold,
+    flexShrink: 0,
+  },
+  stepContent: {
+    flex: 1,
+  },
+  onboardingButton: {
+    backgroundColor: colors.brandPrimary,
+    color: colors.backgroundPrimary,
+    border: 'none',
+    borderRadius: '8px',
+    padding: '12px 24px',
+    ...typography.textMdBold,
+    cursor: 'pointer',
+    alignSelf: 'center',
+    marginTop: '16px',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
   },
 };
 

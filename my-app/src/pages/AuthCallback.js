@@ -7,16 +7,16 @@ const AuthCallback = () => {
 
   useEffect(() => {
     const handleAuthCallback = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        console.error('Auth callback error:', error);
-        navigate('/login?error=Unable to verify email');
-        return;
-      }
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Auth callback error:', error);
+          navigate('/login?error=Unable+to+verify+email');
+          return;
+        }
 
-      if (session?.user) {
-        try {
+        if (session?.user) {
           // Update user profile with verification status and login time
           const { error: updateError } = await supabase
             .from('users')
@@ -28,6 +28,37 @@ const AuthCallback = () => {
 
           if (updateError) {
             console.error('Error updating user status:', updateError);
+            // Try to create the user profile if it doesn't exist
+            const { data: userExists } = await supabase
+              .from('users')
+              .select('id')
+              .eq('id', session.user.id)
+              .single();
+            
+            if (!userExists) {
+              // Create user profile if it doesn't exist
+              const { error: insertError } = await supabase
+                .from('users')
+                .insert({
+                  id: session.user.id,
+                  email: session.user.email,
+                  name: session.user.user_metadata?.name || 'User',
+                  role: 'user',
+                  email_verified: true,
+                  is_new_user: true,
+                  created_at: new Date().toISOString(),
+                  last_login: new Date().toISOString()
+                });
+                
+              if (insertError) {
+                console.error('Error creating user profile:', insertError);
+                navigate('/login?error=Failed+to+complete+signup');
+                return;
+              }
+            } else {
+              // If update failed but user exists, show a less severe error
+              console.error('Failed to update user verification status');
+            }
           }
 
           // Clear verification data from localStorage
@@ -36,12 +67,12 @@ const AuthCallback = () => {
 
           // Redirect to dashboard
           navigate('/dashboard');
-        } catch (error) {
-          console.error('Profile update error:', error);
-          navigate('/dashboard'); // Still redirect to dashboard even if update fails
+        } else {
+          navigate('/login?error=Verification+failed');
         }
-      } else {
-        navigate('/login?error=Verification failed');
+      } catch (error) {
+        console.error('Auth callback error:', error);
+        navigate('/login?error=Verification+failed');
       }
     };
 
