@@ -172,8 +172,8 @@ const Dashboard = () => {
     }
   };
 
-  const handleSeeAllClick = () => {
-    navigate('/all-tests');
+  const handleSeeAllTests = () => {
+    navigate('/tests');
   };
 
   const handleLogout = async () => {
@@ -707,10 +707,10 @@ const Dashboard = () => {
           <div style={styles.testsSectionHeader}>
             <h2 style={typography.textXlBold}>Your Tests</h2>
             <button 
-              onClick={handleSeeAllClick}
+              onClick={handleSeeAllTests}
               style={styles.seeAllButton}
             >
-              See all tests
+              See All Tests
             </button>
           </div>
 
