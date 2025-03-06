@@ -13,6 +13,8 @@ const TestDetails = () => {
   const [timeRemaining, setTimeRemaining] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [showFinishPopup, setShowFinishPopup] = useState(false);
+  const [existingTest, setExistingTest] = useState(null);
+  const [showExistingTestModal, setShowExistingTestModal] = useState(false);
 
   // Keep track of user answers
   const [userAnswers, setUserAnswers] = useState({});
@@ -34,6 +36,7 @@ const TestDetails = () => {
   useEffect(() => {
     console.log("TestDetails component mounted with testId:", testId);
     fetchTestDetails();
+    checkExistingTest();
     fetchQuestions();
   }, [testId]);
 
@@ -111,36 +114,98 @@ const TestDetails = () => {
     }
   };
 
-  const handleStartTest = async () => {
+  const checkExistingTest = async () => {
     try {
+      // Get the current user
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        setError("User not authenticated");
+        console.error("User not authenticated");
         return;
       }
       
-      // Create a new user_test entry
+      // Check for existing in-progress test
       const { data, error } = await supabase
         .from('user_tests')
-        .insert({
-          user_id: user.id,
-          exam_test_id: testId,
-          status: 'in_progress',
-          start_time: new Date().toISOString(),
-          total_questions_answered: 0,
-          score: 0
-        })
-        .select()
-        .single();
+        .select('id, status, created_at, start_time')
+        .eq('exam_test_id', testId)
+        .eq('user_id', user.id)
+        .eq('status', 'in_progress')
+        .order('created_at', { ascending: false })
+        .limit(1);
+        
+      if (error) {
+        console.error("Error checking existing test:", error);
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        console.log("Found existing in-progress test:", data[0]);
+        setExistingTest(data[0]);
+        
+        // Calculate how long ago the test was started
+        const startTime = new Date(data[0].start_time || data[0].created_at);
+        const minutesAgo = Math.round((Date.now() - startTime.getTime()) / (1000 * 60));
+        
+        // If test was started recently, show modal
+        if (minutesAgo < 120) {
+          setShowExistingTestModal(true);
+        } else {
+          // If the test is older than 2 hours, mark it as abandoned
+          console.log("Test is older than 2 hours, marking as abandoned");
+          
+          await supabase
+            .from('user_tests')
+            .update({ status: 'abandoned' })
+            .eq('id', data[0].id);
+            
+          setExistingTest(null);
+        }
+      }
+    } catch (error) {
+      console.error("Error checking existing test:", error);
+    }
+  };
 
-      if (error) throw error;
-
-      // Navigate to the test questions
+  const handleStartTest = async () => {
+    try {
+      // If there's an existing test and the modal is not shown, show it
+      if (existingTest && !showExistingTestModal) {
+        setShowExistingTestModal(true);
+        return;
+      }
+      
+      // If no existing test, navigate to the test screen
       navigate(`/test/${testId}/questions`);
     } catch (error) {
-      console.error('Error starting test:', error);
-      setError(error.message);
+      console.error("Error starting test:", error);
+      alert("We encountered an issue starting the test. Please try again.");
+    }
+  };
+
+  const handleContinueTest = () => {
+    setShowExistingTestModal(false);
+    navigate(`/test/${testId}/questions`);
+  };
+
+  const handleAbandonTest = async () => {
+    try {
+      if (!existingTest) return;
+      
+      // Mark the existing test as abandoned
+      await supabase
+        .from('user_tests')
+        .update({ status: 'abandoned' })
+        .eq('id', existingTest.id);
+        
+      setExistingTest(null);
+      setShowExistingTestModal(false);
+      
+      // Start a new test
+      navigate(`/test/${testId}/questions`);
+    } catch (error) {
+      console.error("Error abandoning test:", error);
+      alert("We encountered an issue. Please try again.");
     }
   };
 
@@ -373,6 +438,34 @@ const TestDetails = () => {
 
       {/* Render the finish popup */}
       {renderFinishPopup()}
+
+      {/* Modal for existing test */}
+      {showExistingTestModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h2 style={typography.textLgBold}>Continue Existing Test?</h2>
+            <p style={typography.textMdRegular}>
+              You have an in-progress test that was started{' '}
+              {Math.round((Date.now() - new Date(existingTest.start_time || existingTest.created_at).getTime()) / (1000 * 60))}{' '}
+              minutes ago. Would you like to continue where you left off?
+            </p>
+            <div style={styles.modalButtons}>
+              <button 
+                style={styles.secondaryButton}
+                onClick={handleAbandonTest}
+              >
+                Start New Test
+              </button>
+              <button 
+                style={styles.primaryButton}
+                onClick={handleContinueTest}
+              >
+                Continue Test
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -568,6 +661,49 @@ const styles = {
     borderRadius: '8px',
     ...typography.textLgMedium,
     color: colors.textPrimary,
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: colors.backgroundPrimary,
+    borderRadius: '12px',
+    padding: '24px',
+    maxWidth: '500px',
+    width: '90%',
+  },
+  modalButtons: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    marginTop: '24px',
+  },
+  primaryButton: {
+    backgroundColor: colors.brandPrimary,
+    color: colors.backgroundPrimary,
+    border: 'none',
+    borderRadius: '8px',
+    padding: '8px 16px',
+    ...typography.textSmBold,
+    cursor: 'pointer',
+  },
+  secondaryButton: {
+    backgroundColor: colors.backgroundSecondary,
+    color: colors.textPrimary,
+    border: 'none',
+    borderRadius: '8px',
+    padding: '8px 16px',
+    ...typography.textSmBold,
+    cursor: 'pointer',
   },
 };
 

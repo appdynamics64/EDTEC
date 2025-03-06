@@ -2551,7 +2551,32 @@ const styles = {
     display: 'flex',
     gap: '12px',
     marginTop: '16px',
-  }
+  },
+  adminCard: {
+    backgroundColor: colors.backgroundPrimary,
+    borderRadius: '8px',
+    padding: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    cursor: 'pointer',
+    transition: 'transform 0.2s',
+    ':hover': {
+      transform: 'translateY(-2px)',
+    }
+  },
+  adminCardIcon: {
+    fontSize: '32px',
+    width: '64px',
+    height: '64px',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminCardContent: {
+    flex: 1,
+  },
 };
 
 export default AdminConsole; 
