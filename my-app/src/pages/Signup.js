@@ -124,63 +124,66 @@ const Signup = () => {
   const handleSignup = async (e) => {
     e.preventDefault();
     
-    // Mark all fields as touched for validation
-    setTouched({
-      email: true,
-      password: true,
-      confirmPassword: true,
-      name: true
-    });
-    
-    if (!isFormValid()) {
-      return;
-    }
-
     try {
       setLoading(true);
       setError(null);
       
+      // Validate form data
+      if (!email || !password || !name) {
+        setError('Please fill in all fields');
+        setLoading(false);
+        return;
+      }
+      
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
+        setLoading(false);
+        return;
+      }
+      
       // Create user in Supabase Auth
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data: { user }, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             name,
-          }
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`
         }
       });
       
-      if (signUpError) throw signUpError;
-      
-      // Store user profile in your profiles table
-      const { data: { user } } = await supabase.auth.getUser();
+      if (error) throw error;
       
       if (user) {
+        // Create user profile in users table
         const { error: profileError } = await supabase
           .from('users')
-          .insert([
-            { 
-              id: user.id, 
-              email: email.toLowerCase(),
-              name,
-              role: 'user'
-            }
-          ]);
+          .insert({
+            id: user.id,
+            email: user.email,
+            name: name,
+            role: 'user',
+            email_verified: false,
+            is_new_user: true,
+            created_at: new Date().toISOString()
+          });
+          
+        if (profileError) {
+          console.error('Error creating user profile:', profileError);
+          // Continue anyway, as the auth record was created successfully
+        }
         
-        if (profileError) throw profileError;
+        // Store email for verification page
+        localStorage.setItem('pendingVerificationEmail', email);
+        localStorage.setItem('signupTimestamp', Date.now().toString());
+        
+        // Redirect to confirmation page
+        navigate('/confirmation');
       }
-      
-      // Navigate to confirmation page
-      navigate('/confirmation', { state: { email } });
     } catch (error) {
       console.error('Signup error:', error);
-      
-      if (error.message.includes('already registered')) {
-        setError('This email is already registered. Please use a different email or try signing in.');
-      } else {
-        setError(error.message || 'Failed to create your account. Please try again.');
-      }
+      setError(error.message || 'An error occurred during signup');
     } finally {
       setLoading(false);
     }
