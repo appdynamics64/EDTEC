@@ -1,278 +1,141 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../config/supabaseClient';
-import colors from '../styles/foundation/colors';
-import typography from '../styles/foundation/typography';
+import { supabase } from '../supabaseClient';
 
-const AllTests = () => {
+function AllTests() {
   const navigate = useNavigate();
-  const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeFilter, setActiveFilter] = useState('all');
-
-  const fetchTests = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        navigate('/login');
-        return;
-      }
-
-      let query = supabase.from('exam_tests');
-
-      switch (activeFilter) {
-        case 'recommended':
-          query = query
-            .select('*')
-            .eq('type', 'recommended');
-          break;
-        case 'custom':
-          query = query
-            .select('*')
-            .eq('type', 'custom');
-          break;
-        case 'completed':
-          query = query
-            .select(`
-              id, 
-              test_name, 
-              total_questions,
-              duration,
-              is_active,
-              created_at,
-              user_tests(id, score, status)
-            `)
-            .eq('user_tests.user_id', user.id)
-            .eq('user_tests.status', 'completed');
-          break;
-        default:
-          query = query.select('*');
-          break;
-      }
-
-      const { data, error } = await query;
-      
-      if (error) throw error;
-      
-      const processedTests = (data || []).map(test => ({
-        ...test,
-        test_name: test.test_name || 'Unnamed Test',
-        total_questions: test.total_questions || 0,
-        duration: test.duration || 0,
-        user_tests: Array.isArray(test.user_tests) ? test.user_tests : []
-      }));
-      
-      setTests(processedTests);
-    } catch (error) {
-      console.error('Error fetching tests:', error);
-      setError(error.message || 'Failed to load tests');
-    } finally {
-      setLoading(false);
-    }
-  }, [activeFilter, navigate]);
+  const [tests, setTests] = useState([]);
 
   useEffect(() => {
+    console.log('Component mounted');
     fetchTests();
-  }, [fetchTests]);
+  }, []);
 
-  const filters = [
-    { id: 'all', label: 'All Tests' },
-    { id: 'recommended', label: 'Recommended' },
-    { id: 'custom', label: 'Custom Tests' },
-    { id: 'completed', label: 'Completed' },
-  ];
+  async function fetchTests() {
+    try {
+      setLoading(true);
+      console.log('Starting to fetch tests...');
 
-  const renderTestCard = (test) => {
-    const hasUserTests = Array.isArray(test.user_tests) && test.user_tests.length > 0;
-    const score = hasUserTests ? (test.user_tests[0]?.score || 0) : 0;
-    
-    const handleTestAction = () => {
-      if (hasUserTests) {
-        // Navigate to results page with the user_test_id
-        navigate(`/results/${test.user_tests[0].id}`);
-      } else {
-        // Navigate to test details page to start the test
-        navigate(`/test/${test.id}`);
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('Current user:', user);
+      
+      if (userError) {
+        console.error('User error:', userError);
+        throw userError;
       }
-    };
-    
-    return (
-      <div key={test.id} style={styles.testCard}>
-        <div style={styles.testInfo}>
-          <h3 style={typography.textLgMedium}>{test.test_name}</h3>
-          <p style={{...typography.textSmRegular, color: colors.textSecondary}}>
-            {test.total_questions} questions · {test.duration} mins
-          </p>
-          {hasUserTests && (
-            <p style={styles.score}>
-              Score: {score}/{test.total_questions}
-            </p>
-          )}
-        </div>
-        <button 
-          onClick={handleTestAction}
-          style={styles.startButton}
-        >
-          {hasUserTests ? 'View Result' : 'Start Test'} →
-        </button>
-      </div>
-    );
+
+      // Fetch tests with only existing columns
+      const { data: tests, error: testsError } = await supabase
+        .from('exam_tests')
+        .select(`
+          id,
+          test_name,
+          total_questions,
+          duration,
+          is_active,
+          exam:exam_id (
+            exam_name
+          )
+        `)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      console.log('Raw tests data:', tests);
+
+      if (testsError) {
+        console.error('Error fetching tests:', testsError);
+        throw testsError;
+      }
+
+      setTests(tests || []);
+      console.log('Tests state updated');
+
+    } catch (err) {
+      console.error('Error in fetchTests:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      console.log('Loading finished');
+    }
+  }
+
+  const handleViewTest = (testId) => {
+    console.log('Navigating to test:', testId);
+    navigate(`/test/${testId}`);
   };
 
-  return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <button 
-          onClick={() => navigate('/dashboard')} 
-          style={styles.backButton}
-        >
-          ← Back
-        </button>
-        <h1 style={typography.displayMdBold}>All Tests</h1>
+  if (loading) {
+    return (
+      <div className="container p-4">
+        <div className="text-center">
+          <div className="spinner-border" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+          <p className="mt-2">Loading tests...</p>
+        </div>
       </div>
+    );
+  }
 
-      {loading ? (
-        <div style={styles.loading}>Loading tests...</div>
-      ) : error ? (
-        <div style={styles.error}>{error}</div>
+  if (error) {
+    return (
+      <div className="container p-4">
+        <div className="alert alert-danger" role="alert">
+          <h4 className="alert-heading">Error Loading Tests</h4>
+          <p>{error}</p>
+          <hr />
+          <p className="mb-0">Please try refreshing the page or contact support if the problem persists.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container p-4">
+      <h1 className="mb-4">Available Tests</h1>
+      
+      {tests.length === 0 ? (
+        <div className="alert alert-info">
+          <h4 className="alert-heading">No Tests Available</h4>
+          <p>There are currently no active tests available. Please check back later.</p>
+        </div>
       ) : (
-        <>
-          <div style={styles.filters}>
-            {filters.map(filter => (
-              <button
-                key={filter.id}
-                onClick={() => setActiveFilter(filter.id)}
-                style={{
-                  ...styles.filterButton,
-                  ...(activeFilter === filter.id && styles.activeFilter)
-                }}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-
-          <div style={styles.testGrid}>
-            {tests.length === 0 ? (
-              <div style={styles.noTests}>
-                {activeFilter === 'all' ? (
-                  "No tests available yet. Check back later!"
-                ) : activeFilter === 'completed' ? (
-                  "You haven't completed any tests yet."
-                ) : (
-                  `No ${activeFilter} tests available.`
-                )}
+        <div className="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+          {tests.map(test => (
+            <div key={test.id} className="col">
+              <div className="card h-100">
+                <div className="card-header">
+                  <span className="badge bg-secondary">
+                    {test.exam?.exam_name || "No Exam"}
+                  </span>
+                </div>
+                <div className="card-body">
+                  <h5 className="card-title">{test.test_name || "Unnamed Test"}</h5>
+                  <div className="card-text">
+                    <p className="mb-1">
+                      <strong>Questions:</strong> {test.total_questions || "N/A"}
+                    </p>
+                    <p className="mb-1">
+                      <strong>Duration:</strong> {test.duration ? `${test.duration} minutes` : "N/A"}
+                    </p>
+                  </div>
+                  <button 
+                    className="btn btn-primary mt-3"
+                    onClick={() => handleViewTest(test.id)}
+                  >
+                    View Test
+                  </button>
+                </div>
               </div>
-            ) : (
-              tests.map(test => renderTestCard(test))
-            )}
-          </div>
-        </>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
-};
-
-const styles = {
-  container: {
-    padding: '20px',
-    maxWidth: '1200px',
-    margin: '0 auto',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    marginBottom: '32px',
-  },
-  backButton: {
-    padding: '8px 16px',
-    borderRadius: '8px',
-    backgroundColor: colors.backgroundSecondary,
-    color: colors.textPrimary,
-    border: 'none',
-    cursor: 'pointer',
-    ...typography.textMdMedium,
-  },
-  filters: {
-    display: 'flex',
-    gap: '12px',
-    marginBottom: '24px',
-    overflowX: 'auto',
-    padding: '4px',
-  },
-  filterButton: {
-    padding: '8px 16px',
-    borderRadius: '20px',
-    border: `1px solid ${colors.textSecondary}`,
-    backgroundColor: 'transparent',
-    color: colors.textPrimary,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-    ...typography.textSmMedium,
-  },
-  activeFilter: {
-    backgroundColor: colors.brandPrimary,
-    color: colors.backgroundPrimary,
-    border: 'none',
-  },
-  testGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-    gap: '20px',
-  },
-  testCard: {
-    padding: '20px',
-    borderRadius: '12px',
-    backgroundColor: colors.backgroundPrimary,
-    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  testInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  startButton: {
-    padding: '12px 24px',
-    borderRadius: '8px',
-    backgroundColor: colors.brandPrimary,
-    color: colors.backgroundPrimary,
-    border: 'none',
-    cursor: 'pointer',
-    ...typography.textMdBold,
-    alignSelf: 'flex-start',
-  },
-  loading: {
-    textAlign: 'center',
-    padding: '40px',
-    color: colors.textSecondary,
-    ...typography.textLgRegular,
-  },
-  error: {
-    textAlign: 'center',
-    padding: '40px',
-    color: colors.accentError,
-    ...typography.textMdRegular,
-  },
-  noTests: {
-    gridColumn: '1 / -1',
-    textAlign: 'center',
-    padding: '40px',
-    color: colors.textSecondary,
-  },
-  score: {
-    color: colors.accentSuccess,
-    ...typography.textSmMedium,
-    marginTop: '4px',
-  },
-};
+}
 
 export default AllTests; 
