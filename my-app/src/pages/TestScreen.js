@@ -12,13 +12,75 @@ const TestScreen = () => {
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [timeRemaining, setTimeRemaining] = useState(null);
   const [testData, setTestData] = useState(null);
-  const [showFinishModal, setShowFinishModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentTestId, setCurrentTestId] = useState(null);
 
   useEffect(() => {
     fetchTestDetails();
     fetchQuestions();
   }, [testId]);
+
+  useEffect(() => {
+    const initializeTest = async () => {
+      try {
+        console.log('Initializing test...');
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError) throw userError;
+        if (!user) {
+          console.error('No user found');
+          navigate('/login');
+          return;
+        }
+
+        // Check for existing in-progress test
+        const { data: existingTest, error: existingError } = await supabase
+          .from('user_tests')
+          .select('id, status')
+          .eq('exam_test_id', testId)
+          .eq('user_id', user.id)
+          .eq('status', 'in_progress')
+          .single();
+
+        if (existingError && existingError.code !== 'PGRST116') {
+          throw existingError;
+        }
+
+        if (existingTest) {
+          console.log('Found existing test:', existingTest);
+          setCurrentTestId(existingTest.id);
+          return;
+        }
+
+        // Create new test if none exists
+        const { data: newTest, error: createError } = await supabase
+          .from('user_tests')
+          .insert([{
+            exam_test_id: testId,
+            user_id: user.id,
+            status: 'in_progress',
+            start_time: new Date().toISOString(),
+            score: 0,
+            time_taken: 0,
+            total_questions_answered: 0
+          }])
+          .select()
+          .single();
+
+        if (createError) throw createError;
+
+        console.log('Created new test:', newTest);
+        setCurrentTestId(newTest.id);
+
+      } catch (error) {
+        console.error('Error initializing test:', error);
+        alert('Failed to initialize test. Please try again.');
+      }
+    };
+
+    initializeTest();
+  }, [testId, navigate]);
 
   // Set up countdown timer when test data is loaded
   useEffect(() => {
@@ -249,19 +311,50 @@ const TestScreen = () => {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
-  const handleAnswerSelect = (optionKey) => {
-    setSelectedAnswers({
-      ...selectedAnswers,
-      [currentQuestion]: optionKey
-    });
+  const handleAnswerSelect = async (questionId, answer) => {
+    try {
+      console.log('Saving answer:', { questionId, answer, currentTestId });
+      
+      if (!currentTestId) {
+        console.error('No current test ID found');
+        return;
+      }
+
+      // Update local state
+      setSelectedAnswers(prev => ({
+        ...prev,
+        [questionId]: answer
+      }));
+
+      // Save to database
+      const question = questions.find(q => q.id.toString() === questionId.toString());
+      const isCorrect = question?.correct_answer === answer;
+      
+      const { error } = await supabase
+        .from('user_test_questions')
+        .upsert({
+          user_test_id: currentTestId,
+          question_id: questionId,
+          selected_answer: answer,
+          is_correct: isCorrect,
+          marks_awarded: isCorrect ? 1 : 0,
+          time_spent: 0
+        });
+
+      if (error) {
+        console.error('Error saving answer:', error);
+        throw error;
+      }
+
+      console.log('Answer saved successfully');
+    } catch (error) {
+      console.error('Error in handleAnswerSelect:', error);
+    }
   };
 
   const handleNext = () => {
     if (currentQuestion < questions.length - 1) {
       setCurrentQuestion(prev => prev + 1);
-    } else {
-      // If we're on the last question, show the finish modal
-      setShowFinishModal(true);
     }
   };
 
@@ -273,79 +366,110 @@ const TestScreen = () => {
 
   const handleFinishTest = async () => {
     try {
-      // Get the current user
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        console.error("User not authenticated");
-        return;
+      setIsSubmitting(true);
+      console.log('Starting test submission...', { currentTestId });
+
+      if (!currentTestId) {
+        throw new Error('No active test found');
       }
-      
-      // Calculate results
-      const attempted = Object.keys(selectedAnswers).length;
-      const correct = Object.entries(selectedAnswers).filter(([qIndex, answer]) => {
-        const question = questions[parseInt(qIndex)];
-        // Compare the selected answer with the correct answer
-        if (!question || !question.correct_answer) return false;
-        
-        // Handle different formats of correct_answer
-        if (typeof question.correct_answer === 'string') {
-          return question.correct_answer === answer;
-        } else if (Array.isArray(question.correct_answer)) {
-          return question.correct_answer.includes(answer);
-        } else if (typeof question.correct_answer === 'object') {
-          return question.correct_answer[answer] === true;
-        }
-        return false;
-      }).length;
-      
-      const score = correct;
-      
-      // Find the user_test entry for this test
-      const { data: userTest, error: userTestError } = await supabase
+
+      // Calculate final score
+      const { data: answers, error: answersError } = await supabase
+        .from('user_test_questions')
+        .select('is_correct')
+        .eq('user_test_id', currentTestId);
+
+      if (answersError) throw answersError;
+
+      const totalQuestions = questions.length;
+      const answeredQuestions = Object.keys(selectedAnswers).length;
+      const correctAnswers = answers?.filter(a => a.is_correct)?.length || 0;
+      const scorePercentage = (correctAnswers / totalQuestions) * 100;
+
+      console.log('Calculated score:', {
+        totalQuestions,
+        answeredQuestions,
+        correctAnswers,
+        scorePercentage
+      });
+
+      // Update test status
+      const { error: updateError } = await supabase
         .from('user_tests')
-        .select('id')
+        .update({ 
+          status: 'completed',
+          end_time: new Date().toISOString(),
+          score: scorePercentage,
+          total_questions_answered: answeredQuestions,
+          time_taken: Math.round((new Date() - new Date(testData?.start_time)) / 60000) // minutes
+        })
+        .eq('id', currentTestId);
+
+      if (updateError) throw updateError;
+
+      console.log('Test completed successfully');
+      navigate(`/test/${testId}/results/${currentTestId}`);
+      
+    } catch (error) {
+      console.error('Error in handleFinishTest:', error);
+      alert(`Failed to submit test: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // This is the function for the Finish button that appears on last question
+  const handleLastQuestionFinish = async () => {
+    try {
+      setIsSubmitting(true);
+      console.log('Last question finish button clicked');
+      
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('User data:', user);
+      
+      if (userError || !user) {
+        throw new Error(userError?.message || 'No user found');
+      }
+
+      const { data: userTests, error: userTestError } = await supabase
+        .from('user_tests')
+        .select('*')
         .eq('exam_test_id', testId)
         .eq('user_id', user.id)
         .eq('status', 'in_progress')
-        .single();
-        
-      if (userTestError) {
-        console.error('Error finding user test:', userTestError);
-        throw userTestError;
+        .order('created_at', { ascending: false });
+
+      if (userTestError || !userTests?.length) {
+        throw new Error(userTestError?.message || 'No active test found');
       }
-      
-      // Update the user_test entry
+
+      const userTestId = userTests[0].id;
+
       const { error: updateError } = await supabase
         .from('user_tests')
-        .update({
+        .update({ 
           status: 'completed',
-          score: score,
-          end_time: new Date().toISOString(),
-          time_taken: testData.duration * 60 - timeRemaining,
-          total_questions_answered: attempted
+          end_time: new Date().toISOString()
         })
-        .eq('id', userTest.id);
+        .eq('id', userTestId);
 
-      if (updateError) {
-        console.error('Error updating user test:', updateError);
-        throw updateError;
-      }
+      if (updateError) throw updateError;
 
-      // Navigate to results page
-      navigate(`/test/${testId}/result`, {
-        state: {
-          score,
-          totalQuestions: questions.length,
-          attempted,
-          correct,
-          wrong: attempted - correct
-        }
-      });
+      console.log('Navigating to results:', `/test/${testId}/results/${userTestId}`);
+      navigate(`/test/${testId}/results/${userTestId}`);
+      
     } catch (error) {
-      console.error('Error finishing test:', error);
+      console.error('Error in handleLastQuestionFinish:', error);
+      alert(`Failed to submit test: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    console.log('Current question:', questions[currentQuestion]);
+    console.log('Selected answers:', selectedAnswers);
+  }, [currentQuestion, questions, selectedAnswers]);
 
   return (
     <div style={styles.container}>
@@ -366,12 +490,17 @@ const TestScreen = () => {
           </div>
         )}
         
-        {/* Finish button */}
+        {/* Updated Finish button */}
         <button 
-          style={styles.finishButton}
-          onClick={() => setShowFinishModal(true)}
+          style={{
+            ...styles.finishButton,
+            opacity: isSubmitting ? 0.7 : 1,
+            cursor: isSubmitting ? 'not-allowed' : 'pointer'
+          }}
+          onClick={handleFinishTest}
+          disabled={isSubmitting}
         >
-          Finish Test
+          {isSubmitting ? 'Submitting...' : 'Finish Test'}
         </button>
       </div>
       
@@ -416,24 +545,19 @@ const TestScreen = () => {
             
             <div style={styles.optionsContainer}>
               {questions[currentQuestion]?.choices && 
-               Object.entries(questions[currentQuestion].choices).map(([key, value]) => (
-                <button
-                  key={key}
-                  style={{
-                    ...styles.optionButton,
-                    ...(selectedAnswers[currentQuestion] === key && styles.selectedOption)
-                  }}
-                  onClick={() => handleAnswerSelect(key)}
-                >
-                  <span style={styles.optionKey}>{key}</span>
-                  <span style={styles.optionText}>{value}</span>
-                </button>
-              ))}
-              
-              {(!questions[currentQuestion]?.choices || 
-                Object.keys(questions[currentQuestion]?.choices || {}).length === 0) && (
-                <p>No options available for this question</p>
-              )}
+                Object.entries(questions[currentQuestion].choices).map(([key, value]) => (
+                  <button
+                    key={key}
+                    style={{
+                      ...styles.optionButton,
+                      ...(selectedAnswers[questions[currentQuestion].id] === key ? styles.selectedOption : {})
+                    }}
+                    onClick={() => handleAnswerSelect(questions[currentQuestion].id, key)}
+                  >
+                    <span style={styles.optionKey}>{key}</span>
+                    <span style={styles.optionText}>{value}</span>
+                  </button>
+                ))}
             </div>
           </div>
           
@@ -454,39 +578,12 @@ const TestScreen = () => {
                 ...styles.navButton,
                 backgroundColor: colors.brandPrimary,
               }}
-              onClick={handleNext}
+              onClick={currentQuestion === questions.length - 1 ? handleFinishTest : handleNext}
             >
               {currentQuestion === questions.length - 1 ? 'Finish' : 'Next'}
             </button>
           </div>
         </>
-      )}
-      
-      {/* Finish confirmation modal */}
-      {showFinishModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
-            <h2 style={typography.textLgBold}>Finish Test?</h2>
-            <p style={typography.textMdRegular}>
-              You have answered {Object.keys(selectedAnswers).length} out of {questions.length} questions.
-              Are you sure you want to finish the test?
-            </p>
-            <div style={styles.modalButtons}>
-              <button 
-                style={styles.cancelButton}
-                onClick={() => setShowFinishModal(false)}
-              >
-                Cancel
-              </button>
-              <button 
-                style={styles.confirmButton}
-                onClick={handleFinishTest}
-              >
-                Finish
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
@@ -553,12 +650,12 @@ const styles = {
   },
   finishButton: {
     padding: '8px 16px',
-    borderRadius: '20px',
-    backgroundColor: colors.brandPrimary,
-    color: colors.backgroundPrimary,
+    backgroundColor: '#007bff',
+    color: 'white',
     border: 'none',
-    ...typography.textSmBold,
+    borderRadius: '4px',
     cursor: 'pointer',
+    fontSize: '14px'
   },
   progressInfo: {
     display: 'flex',
@@ -578,32 +675,37 @@ const styles = {
     padding: '16px',
     borderRadius: '12px',
     border: `1px solid ${colors.brandPrimary}`,
-    backgroundColor: colors.backgroundPrimary,
+    backgroundColor: 'white',
     textAlign: 'left',
     cursor: 'pointer',
     display: 'flex',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: '12px',
-    ...typography.textMdRegular,
+    width: '100%',
+    margin: '8px 0',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      backgroundColor: colors.backgroundSecondary,
+    }
+  },
+  selectedOption: {
+    backgroundColor: colors.brandPrimary,
+    color: 'white',
+    border: 'none',
   },
   optionKey: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '28px',
-    height: '28px',
+    width: '32px',
+    height: '32px',
     borderRadius: '50%',
-    backgroundColor: colors.backgroundSecondary,
-    ...typography.textSmBold,
-    flexShrink: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    fontWeight: 'bold',
   },
   optionText: {
     flex: 1,
-  },
-  selectedOption: {
-    backgroundColor: colors.brandPrimary,
-    color: colors.backgroundPrimary,
-    border: 'none',
+    fontSize: '16px',
   },
   navigationButtons: {
     display: 'flex',
@@ -622,51 +724,6 @@ const styles = {
     cursor: 'pointer',
     color: colors.backgroundPrimary,
     backgroundColor: colors.textSecondary,
-    ...typography.textMdBold,
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '16px',
-    zIndex: 1000,
-  },
-  modal: {
-    backgroundColor: colors.backgroundPrimary,
-    borderRadius: '16px',
-    padding: '24px',
-    width: '100%',
-    maxWidth: '400px',
-  },
-  modalButtons: {
-    display: 'flex',
-    gap: '12px',
-    marginTop: '24px',
-  },
-  cancelButton: {
-    flex: 1,
-    padding: '16px',
-    borderRadius: '12px',
-    border: `1px solid ${colors.brandPrimary}`,
-    backgroundColor: colors.backgroundPrimary,
-    color: colors.brandPrimary,
-    cursor: 'pointer',
-    ...typography.textMdBold,
-  },
-  confirmButton: {
-    flex: 1,
-    padding: '16px',
-    borderRadius: '12px',
-    border: 'none',
-    backgroundColor: colors.brandPrimary,
-    color: colors.backgroundPrimary,
-    cursor: 'pointer',
     ...typography.textMdBold,
   },
 };
