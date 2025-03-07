@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
+import useAuth from '../hooks/useAuth';
 
 const TestsListingPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [userTests, setUserTests] = useState({});
-  const [userName, setUserName] = useState(null);
+  const [userTests] = useState({});
   const [activeCategory, setActiveCategory] = useState('all');
   const [categories, setCategories] = useState([]);
   const [recentTests, setRecentTests] = useState([]);
@@ -20,47 +21,55 @@ const TestsListingPage = () => {
     timeSpent: 0
   });
 
-  useEffect(() => {
-    fetchUserProfile();
-    fetchTests();
-    fetchCategories();
-    fetchRecentTests();
-    fetchStats();
-  }, [activeCategory]);
-
-  const fetchUserProfile = async () => {
+  const fetchUserProfile = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        navigate('/');
-        return;
-      }
-
       const { data, error } = await supabase
-        .from('users')
-        .select('name')
+        .from('profiles')
+        .select('*')
         .eq('id', user.id)
         .single();
 
-      if (error) {
-        console.error('Error fetching user profile:', error);
-        setUserName('User');
-        return;
-      }
-      
-      if (data) {
-        setUserName(data.name || 'User');
-      } else {
-        setUserName('User');
-      }
+      if (error) throw error;
+      return data;
     } catch (error) {
       console.error('Error fetching user profile:', error);
-      setUserName('User');
     }
-  };
+  }, [user.id]);
 
-  const fetchCategories = async () => {
+  const fetchTests = useCallback(async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('tests')
+        .select(`
+          id,
+          name,
+          test_description,
+          duration_minutes,
+          question_count,
+          exam:exam_id (
+            exam_name,
+            exam_description,
+            category:category_id (
+              name,
+              category_description
+            )
+          )
+        `);
+
+      if (error) {
+        console.error('Error fetching tests:', error);
+        throw error;
+      }
+      setTests(data || []);
+    } catch (error) {
+      console.error('Error fetching tests:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchCategories = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('exam_categories')
@@ -72,137 +81,148 @@ const TestsListingPage = () => {
     } catch (error) {
       console.error('Error fetching categories:', error);
     }
-  };
+  }, []);
 
-  const fetchRecentTests = async () => {
+  const fetchRecentTests = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
+      
+      console.debug('Fetching recent tests for user:', user.id);
+      
       const { data, error } = await supabase
         .from('user_tests')
         .select(`
-          *,
-          exam_tests (
-            title,
-            description,
-            duration,
-            total_questions
+          id,
+          status,
+          score,
+          total_questions,
+          time_taken,
+          created_at,
+          test:test_id (
+            id,
+            name,
+            test_description,
+            duration_minutes,
+            question_count,
+            exam:exam_id (
+              exam_name,
+              exam_description,
+              category:category_id (
+                name,
+                category_description
+              )
+            )
           )
         `)
         .eq('user_id', user.id)
-        .eq('status', 'completed')
         .order('created_at', { ascending: false })
         .limit(4);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error fetching recent tests:', {
+          code: error.code,
+          message: error.message,
+          details: error.details
+        });
+        setRecentTests([]);
+        return;
+      }
+      
+      console.debug('Fetched recent tests:', data?.length || 0);
       setRecentTests(data || []);
+      
     } catch (error) {
       console.error('Error fetching recent tests:', error);
+      setRecentTests([]);
     }
-  };
+  }, [user]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get completed tests
+      console.debug('Fetching stats for user:', user.id);
+
       const { data: completedTests, error: completedError } = await supabase
         .from('user_tests')
-        .select('score, total_questions, time_taken')
+        .select(`
+          id,
+          score,
+          total_questions,
+          time_taken,
+          created_at,
+          start_time,
+          end_time,
+          test:test_id (
+            name,
+            duration_minutes
+          )
+        `)
         .eq('user_id', user.id)
         .eq('status', 'completed');
 
-      if (completedError) throw completedError;
-
-      if (completedTests && completedTests.length > 0) {
-        const totalCompleted = completedTests.length;
-        const totalScore = completedTests.reduce((sum, test) => sum + (test.score || 0), 0);
-        const totalQuestions = completedTests.reduce((sum, test) => sum + (test.total_questions || 0), 0);
-        const totalTime = completedTests.reduce((sum, test) => sum + (test.time_taken || 0), 0);
-
-        setStats({
-          testsCompleted: totalCompleted,
-          averageScore: totalCompleted > 0 ? Math.round((totalScore / totalCompleted) * 100) / 100 : 0,
-          totalQuestions: totalQuestions,
-          timeSpent: Math.round(totalTime / 60) // Convert seconds to minutes
+      if (completedError) {
+        console.error('Supabase error fetching stats:', {
+          code: completedError.code,
+          message: completedError.message,
+          details: completedError.details
         });
+        setStats({
+          testsCompleted: 0,
+          averageScore: 0,
+          totalQuestions: 0,
+          timeSpent: 0
+        });
+        return;
       }
+
+      console.debug('Fetched completed tests:', completedTests?.length || 0);
+
+      const stats = {
+        testsCompleted: completedTests?.length || 0,
+        averageScore: completedTests?.length 
+          ? Math.round(completedTests.reduce((acc, test) => {
+              const score = test.score || 0;
+              return acc + score;
+            }, 0) / completedTests.length)
+          : 0,
+        totalQuestions: completedTests?.reduce((acc, test) => acc + (test.total_questions || 0), 0) || 0,
+        timeSpent: completedTests?.reduce((acc, test) => {
+          // Calculate time spent in minutes
+          if (test.start_time && test.end_time) {
+            const start = new Date(test.start_time);
+            const end = new Date(test.end_time);
+            return acc + ((end - start) / (1000 * 60));
+          }
+          return acc + (test.time_taken || 0);
+        }, 0) || 0
+      };
+
+      setStats(stats);
     } catch (error) {
       console.error('Error fetching stats:', error);
+      setStats({
+        testsCompleted: 0,
+        averageScore: 0,
+        totalQuestions: 0,
+        timeSpent: 0
+      });
     }
-  };
+  }, [user]);
 
-  const fetchTests = async () => {
-    try {
-      setLoading(true);
-      
-      // Get the current user
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        console.error("User not authenticated");
-        setLoading(false);
-        return;
-      }
-      
-      // Fetch all available tests
-      let query = supabase
-        .from('exam_tests')
-        .select(`
-          *,
-          exam:exams (
-            exam_name,
-            category_id
-          )
-        `)
-        .order('created_at', { ascending: false });
-        
-      // Apply category filter if not 'all'
-      if (activeCategory !== 'all') {
-        query = query.eq('exam.category_id', activeCategory);
-      }
-        
-      const { data: testsData, error: testsError } = await query;
-        
-      if (testsError) {
-        console.error("Error fetching tests:", testsError);
-        setLoading(false);
-        return;
-      }
-      
-      // Fetch user's in-progress tests
-      const { data: userTestsData, error: userTestsError } = await supabase
-        .from('user_tests')
-        .select('id, exam_test_id, status, created_at, score, total_questions')
-        .eq('user_id', user.id)
-        .in('status', ['in_progress', 'completed'])
-        .order('created_at', { ascending: false });
-        
-      if (userTestsError) {
-        console.error("Error fetching user tests:", userTestsError);
-      }
-      
-      // Organize user tests by exam_test_id
-      const userTestsMap = {};
-      if (userTestsData) {
-        userTestsData.forEach(test => {
-          if (!userTestsMap[test.exam_test_id]) {
-            userTestsMap[test.exam_test_id] = [];
-          }
-          userTestsMap[test.exam_test_id].push(test);
-        });
-      }
-      
-      setTests(testsData || []);
-      setUserTests(userTestsMap);
-      setLoading(false);
-    } catch (error) {
-      console.error("Error in fetchTests:", error);
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    const initialize = async () => {
+      await Promise.all([
+        fetchTests(),
+        fetchUserProfile(),
+        fetchCategories(),
+        fetchRecentTests(),
+        fetchStats()
+      ]);
+    };
+    
+    initialize();
+  }, [fetchTests, fetchUserProfile, fetchCategories, fetchRecentTests, fetchStats]);
 
   const handleTestClick = async (testId) => {
     try {
@@ -218,7 +238,7 @@ const TestsListingPage = () => {
       const { data: existingTests, error: findError } = await supabase
         .from('user_tests')
         .select('id, status, created_at')
-        .eq('exam_test_id', testId)
+        .eq('test_id', testId)
         .eq('user_id', user.id)
         .eq('status', 'in_progress')
         .order('created_at', { ascending: false });
@@ -325,10 +345,10 @@ const TestsListingPage = () => {
                 <div 
                   key={test.id} 
                   style={styles.recentTestCard}
-                  onClick={() => navigate(`/test-result/${test.exam_test_id}?user_test_id=${test.id}`)}
+                  onClick={() => navigate(`/test-result/${test.test_id}?user_test_id=${test.id}`)}
                 >
                   <div style={styles.recentTestInfo}>
-                    <h3 style={typography.textMdBold}>{test.exam_tests?.title || 'Untitled Test'}</h3>
+                    <h3 style={typography.textMdBold}>{test.test?.name || 'Untitled Test'}</h3>
                     <p style={typography.textSmRegular}>
                       {new Date(test.created_at).toLocaleDateString()}
                     </p>
@@ -393,13 +413,14 @@ const TestsListingPage = () => {
             return (
               <div key={test.id} style={styles.testCard}>
                 <div style={styles.testCardContent}>
-                  <h2 style={typography.textLgBold}>{test.title}</h2>
-                  <p style={typography.textSmRegular}>{test.description}</p>
+                  <h2 style={typography.textLgBold}>{test.name}</h2>
+                  <p style={typography.textSmRegular}>{test.exam?.exam_name}</p>
+                  <p style={typography.textSmRegular}>{test.exam?.exam_description}</p>
                   
                   <div style={styles.testInfo}>
                     <div style={styles.infoItem}>
                       <span style={typography.textSmRegular}>Duration:</span>
-                      <span style={typography.textSmBold}>{test.duration} min</span>
+                      <span style={typography.textSmBold}>{test.duration_minutes} min</span>
                     </div>
                     
                     {bestScore !== null && (

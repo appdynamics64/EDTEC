@@ -1,19 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 
 const Login = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [searchParams] = useSearchParams();
+  
+  // Use a formData object for better handling of form state
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+  });
+  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [rememberMe, setRememberMe] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState(null);
+  const [resetSuccess, setResetSuccess] = useState(false);
 
   // Track window size for responsive design
   useEffect(() => {
@@ -33,17 +44,29 @@ const Login = () => {
     checkSession();
   }, [navigate]);
 
-  // Form validation
+  // Check for error in URL params (redirected from auth callback)
+  const urlError = searchParams.get('error');
+
+  // Form validation functions
   const isEmailValid = () => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email);
   };
 
   const isPasswordValid = () => {
-    return password.length >= 6;
+    return formData.password.length >= 6;
   };
 
   const isFormValid = () => {
     return isEmailValid() && isPasswordValid();
+  };
+
+  // Proper implementation of field change handler
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
   const handleLogin = async (e) => {
@@ -60,8 +83,8 @@ const Login = () => {
       setError(null);
       
       const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: formData.email,
+        password: formData.password,
         options: {
           persistSession: rememberMe
         }
@@ -72,7 +95,7 @@ const Login = () => {
       navigate('/dashboard');
     } catch (error) {
       console.error('Login error:', error);
-      setError(error.message || 'Failed to sign in');
+      setError(error.message || 'An error occurred during login');
     } finally {
       setLoading(false);
     }
@@ -148,6 +171,42 @@ const Login = () => {
     }
   };
 
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    
+    if (!resetEmail) {
+      setResetError('Please enter your email address');
+      return;
+    }
+    
+    try {
+      setResetLoading(true);
+      setResetError(null);
+      
+      // Send password reset email - this is the proper Supabase function
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      if (error) throw error;
+      
+      // Show success message
+      setResetSuccess(true);
+    } catch (error) {
+      console.error('Reset password error:', error);
+      setResetError(error.message || 'Failed to send reset password email');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+  
+  // Toggle between login and forgot password
+  const toggleForgotPassword = () => {
+    setShowForgotPassword(!showForgotPassword);
+    setResetError(null);
+    setResetSuccess(false);
+  };
+
   const isDesktop = windowWidth >= 768;
 
   return (
@@ -184,89 +243,165 @@ const Login = () => {
               </p>
             </div>
 
-            {error && (
-              <div style={styles.error}>
-                {error}
+            {urlError && (
+              <div style={styles.errorAlert}>
+                {urlError.replace(/\+/g, ' ')}
               </div>
             )}
             
-            <form onSubmit={handleLogin} style={styles.form}>
-              <div style={styles.formGroup}>
-                <label htmlFor="email" style={styles.label}>
-                  Email address
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onBlur={() => setEmailTouched(true)}
-                  style={{
-                    ...styles.input,
-                    ...(emailTouched && !isEmailValid() ? styles.inputError : {})
-                  }}
-                  placeholder="you@example.com"
-                  disabled={loading}
-                  required
-                />
-                {emailTouched && !isEmailValid() && (
-                  <p style={styles.fieldError}>
-                    Please enter a valid email address
-                  </p>
+            {showForgotPassword ? (
+              // Forgot Password Form
+              <div>
+                <h2 style={styles.subtitle}>Reset Your Password</h2>
+                
+                {resetSuccess ? (
+                  <div style={styles.successAlert}>
+                    <p>Password reset email sent! Please check your inbox.</p>
+                    <p style={typography.textSmRegular}>
+                      Click the link in the email to reset your password.
+                    </p>
+                    <button 
+                      onClick={toggleForgotPassword}
+                      style={styles.secondaryButton}
+                    >
+                      Back to Login
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleForgotPassword} style={styles.form}>
+                    <p style={typography.textMdRegular}>
+                      Enter your email address and we'll send you a link to reset your password.
+                    </p>
+                    
+                    <div style={styles.formGroup}>
+                      <label htmlFor="resetEmail" style={styles.label}>
+                        Email
+                      </label>
+                      <input
+                        id="resetEmail"
+                        name="resetEmail"
+                        type="email"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        style={styles.input}
+                        placeholder="Enter your email"
+                        required
+                      />
+                    </div>
+                    
+                    {resetError && (
+                      <div style={styles.errorText}>{resetError}</div>
+                    )}
+                    
+                    <div style={styles.buttonGroup}>
+                      <button
+                        type="button"
+                        onClick={toggleForgotPassword}
+                        style={styles.secondaryButton}
+                      >
+                        Back to Login
+                      </button>
+                      <button
+                        type="submit"
+                        style={styles.primaryButton}
+                        disabled={resetLoading}
+                      >
+                        {resetLoading ? 'Sending...' : 'Send Reset Link'}
+                      </button>
+                    </div>
+                  </form>
                 )}
               </div>
-
-              <div style={styles.formGroup}>
-                <div style={styles.labelRow}>
-                  <label htmlFor="password" style={styles.label}>
-                    Password
+            ) : (
+              // Login Form
+              <form onSubmit={handleLogin} style={styles.form}>
+                <div style={styles.formGroup}>
+                  <label htmlFor="email" style={styles.label}>
+                    Email
                   </label>
-                  <Link to="/forgot-password" style={styles.forgotPassword}>
-                    Forgot password?
-                  </Link>
-                </div>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onBlur={() => setPasswordTouched(true)}
-                  style={{
-                    ...styles.input,
-                    ...(passwordTouched && !isPasswordValid() ? styles.inputError : {})
-                  }}
-                  placeholder="••••••••"
-                  disabled={loading}
-                  required
-                />
-                {passwordTouched && !isPasswordValid() && (
-                  <p style={styles.fieldError}>
-                    Password must be at least 6 characters
-                  </p>
-                )}
-              </div>
-
-              <div style={styles.rememberMeContainer}>
-                <label style={styles.checkboxLabel}>
                   <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    style={styles.checkbox}
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    onBlur={() => setEmailTouched(true)}
+                    style={{
+                      ...styles.input,
+                      ...(emailTouched && !isEmailValid() ? styles.inputError : {})
+                    }}
+                    placeholder="you@example.com"
                     disabled={loading}
+                    required
                   />
-                  <span>Remember me</span>
-                </label>
-              </div>
-              
-              <button 
-                type="submit" 
-                style={styles.submitButton}
-                disabled={loading}
-              >
-                {loading ? 'Signing in...' : 'Sign in'}
-              </button>
-            </form>
+                  {emailTouched && !isEmailValid() && (
+                    <p style={styles.fieldError}>
+                      Please enter a valid email address
+                    </p>
+                  )}
+                </div>
+
+                <div style={styles.formGroup}>
+                  <div style={styles.labelRow}>
+                    <label htmlFor="password" style={styles.label}>
+                      Password
+                    </label>
+                    <button 
+                      type="button"
+                      onClick={() => setShowForgotPassword(true)}
+                      style={styles.forgotPasswordLink}
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    onBlur={() => setPasswordTouched(true)}
+                    style={{
+                      ...styles.input,
+                      ...(passwordTouched && !isPasswordValid() ? styles.inputError : {})
+                    }}
+                    placeholder="••••••••"
+                    disabled={loading}
+                    required
+                  />
+                  {passwordTouched && !isPasswordValid() && (
+                    <p style={styles.fieldError}>
+                      Password must be at least 6 characters
+                    </p>
+                  )}
+                </div>
+
+                <div style={styles.rememberMeContainer}>
+                  <label style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      style={styles.checkbox}
+                      disabled={loading}
+                    />
+                    <span>Remember me</span>
+                  </label>
+                </div>
+                
+                {error && (
+                  <div style={styles.errorText}>{error}</div>
+                )}
+                
+                <button 
+                  type="submit" 
+                  style={styles.submitButton}
+                  disabled={loading}
+                >
+                  {loading ? 'Logging in...' : 'Login'}
+                </button>
+              </form>
+            )}
             
             <div style={styles.divider}>
               <span style={styles.dividerText}>or</span>
@@ -327,7 +462,7 @@ const styles = {
     borderRadius: '16px',
     overflow: 'hidden',
     backgroundColor: colors.backgroundPrimary,
-    '@media (max-width: 768px)': {
+    '@media screen and (maxWidth: 768px)': {
       flexDirection: 'column',
       boxShadow: 'none',
       borderRadius: '0',
@@ -379,7 +514,7 @@ const styles = {
     alignItems: 'center',
     padding: '20px',
     backgroundColor: colors.backgroundPrimary,
-    '@media (max-width: 768px)': {
+    '@media screen and (maxWidth: 768px)': {
       padding: '16px',
     }
   },
@@ -387,7 +522,7 @@ const styles = {
     width: '100%',
     maxWidth: '420px',
     padding: '20px',
-    '@media (max-width: 480px)': {
+    '@media screen and (maxWidth: 480px)': {
       padding: '16px 8px',
     }
   },
@@ -560,7 +695,7 @@ const styles = {
       textDecoration: 'underline',
     }
   },
-  error: {
+  errorAlert: {
     padding: '12px 16px',
     backgroundColor: '#fff5f5',
     color: colors.accentError,
@@ -569,13 +704,53 @@ const styles = {
     ...typography.textSmMedium,
     border: `1px solid ${colors.accentError}20`,
   },
-  forgotPassword: {
+  forgotPasswordLink: {
+    background: 'none',
+    border: 'none',
+    padding: 0,
     color: colors.brandPrimary,
-    textDecoration: 'none',
-    ...typography.textSmMedium,
-    '&:hover': {
-      textDecoration: 'underline',
-    }
+    cursor: 'pointer',
+    fontSize: '14px',
+    textDecoration: 'underline',
+  },
+  subtitle: {
+    ...typography.textLgBold,
+    color: colors.textPrimary,
+    marginBottom: '16px',
+  },
+  primaryButton: {
+    backgroundColor: colors.brandPrimary,
+    color: colors.backgroundPrimary,
+    border: 'none',
+    borderRadius: '6px',
+    padding: '12px 20px',
+    cursor: 'pointer',
+    ...typography.textMdMedium,
+    transition: 'background-color 0.2s',
+    ':hover': {
+      backgroundColor: colors.brandPrimaryDark,
+    },
+    ':disabled': {
+      backgroundColor: colors.brandPrimaryLight,
+      cursor: 'not-allowed',
+    },
+  },
+  buttonGroup: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'space-between',
+  },
+  successAlert: {
+    backgroundColor: colors.successLight,
+    color: colors.successDark,
+    padding: '16px',
+    borderRadius: '6px',
+    marginBottom: '20px',
+    ...typography.textMdMedium,
+  },
+  errorText: {
+    color: colors.errorDark,
+    ...typography.textSmRegular,
   },
 };
 

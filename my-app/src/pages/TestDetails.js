@@ -41,9 +41,9 @@ const TestDetails = () => {
   }, [testId]);
 
   useEffect(() => {
-    if (testData && testData.duration) {
+    if (testData && testData.duration_minutes) {
       // Convert duration from minutes to seconds
-      setTimeRemaining(testData.duration * 60);
+      setTimeRemaining(testData.duration_minutes * 60);
       
       const timer = setInterval(() => {
         setTimeRemaining(prev => {
@@ -63,7 +63,7 @@ const TestDetails = () => {
   const fetchTestDetails = async () => {
     try {
       const { data, error } = await supabase
-        .from('exam_tests')
+        .from('tests')
         .select('*')
         .eq('id', testId)
         .single();
@@ -85,9 +85,9 @@ const TestDetails = () => {
   const fetchQuestions = async () => {
     try {
       const { data: testQuestions, error: testQuestionsError } = await supabase
-        .from('exam_test_questions')
+        .from('test_questions')
         .select('question_id, question_order')
-        .eq('exam_test_id', testId);
+        .eq('test_id', testId);
 
       if (testQuestionsError) throw testQuestionsError;
 
@@ -128,7 +128,7 @@ const TestDetails = () => {
       const { data, error } = await supabase
         .from('user_tests')
         .select('id, status, created_at, start_time')
-        .eq('exam_test_id', testId)
+        .eq('test_id', testId)
         .eq('user_id', user.id)
         .eq('status', 'in_progress')
         .order('created_at', { ascending: false })
@@ -243,7 +243,7 @@ const TestDetails = () => {
       // Show what we're trying to insert
       console.log('Attempting to insert user test:', {
         user_id: user.id,
-        exam_test_id: testId,
+        test_id: testId,
         status: 'completed',
         score: 0,
         end_time: new Date(),
@@ -255,7 +255,7 @@ const TestDetails = () => {
         .from('user_tests')
         .insert({
           user_id: user.id,
-          exam_test_id: testId,
+          test_id: testId,
           status: 'completed',
           score: 0,
           end_time: new Date(),
@@ -391,13 +391,13 @@ const TestDetails = () => {
           {testData.type === 'custom' && <span>✏️</span>}
         </div>
 
-        <h1 style={typography.displayMdBold}>{testData.test_name}</h1>
+        <h1 style={typography.displayMdBold}>{testData.title}</h1>
 
         <div style={styles.detailsContainer}>
           <h2 style={typography.displayLgBold}>
-            {testData.total_questions} Questions
+            {testData.question_count} Questions
           </h2>
-          <p style={typography.textLgRegular}>{testData.duration} minutes</p>
+          <p style={typography.textLgRegular}>{testData.duration_minutes} minutes</p>
         </div>
 
         <div style={styles.bottomIconContainer}>
@@ -417,7 +417,7 @@ const TestDetails = () => {
             <div style={styles.scoreContainer}>
               <span style={typography.textLgBold}>Your Score</span>
               <span style={typography.displaySmBold}>
-                {lastAttempt.score}/{testData.total_questions}
+                {lastAttempt.score}/{testData.question_count}
               </span>
             </div>
             <button 

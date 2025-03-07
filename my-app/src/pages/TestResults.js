@@ -1,10 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { testService } from '../services/api/testService';
+import useAuth from '../hooks/useAuth';
+import { supabase } from '../config/supabaseClient';
 
 function TestResults() {
   const { testId, resultId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -12,124 +15,94 @@ function TestResults() {
   const [testDetails, setTestDetails] = useState(null);
   const [userAnswers, setUserAnswers] = useState([]);
 
-  useEffect(() => {
-    fetchResults();
-  }, [fetchResults]);
-
-  const fetchResults = async () => {
+  const fetchResults = useCallback(async () => {
     try {
       setLoading(true);
-
-      // 1. Get test result details
-      const { data: result, error: resultError } = await supabase
-        .from('user_tests')
-        .select(`
-          *,
-          exam_test:exam_test_id (
-            test_name,
-            total_questions,
-            exam:exam_id (
-              exam_name
-            )
-          )
-        `)
-        .eq('id', resultId)
-        .single();
-
-      if (resultError) throw resultError;
-
-      // 2. Get user's answers
-      const { data: answers, error: answersError } = await supabase
-        .from('user_test_questions')
-        .select(`
-          *,
-          question:question_id (
-            question_text,
-            choices,
-            correct_answer
-          )
-        `)
-        .eq('user_test_id', resultId);
-
-      if (answersError) throw answersError;
-
-      // 3. Calculate score if not already set
-      if (!result.score || result.score === 0) {
-        const totalAnswered = answers.length;
-        const correctAnswers = answers.filter(a => a.is_correct).length;
-        const scorePercentage = (correctAnswers / result.exam_test.total_questions) * 100;
-
-        // Update the score
-        const { error: updateError } = await supabase
-          .from('user_tests')
-          .update({ 
-            score: scorePercentage,
-            total_questions_answered: totalAnswered,
-            status: 'completed'
-          })
-          .eq('id', resultId);
-
-        if (updateError) throw updateError;
-        
-        result.score = scorePercentage;
-        result.total_questions_answered = totalAnswered;
-        result.status = 'completed';
-      }
-
+      const result = await testService.getTestResults(resultId);
       setTestResult(result);
-      setTestDetails(result.exam_test);
-      setUserAnswers(answers);
-      
+      setTestDetails(result.test);
+      setUserAnswers(result.answers);
     } catch (error) {
       console.error('Error:', error);
       setError(error.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [resultId]);
+
+  const fetchTestResults = useCallback(async () => {
+    try {
+      console.debug('Fetching test results for:', { resultId });
+      
+      const { data, error } = await supabase
+        .from('user_tests')
+        .select(`
+          id,
+          status,
+          score,
+          total_questions,
+          time_taken,
+          created_at,
+          start_time,
+          end_time,
+          answers,
+          test:test_id (
+            id,
+            name,
+            test_description,
+            duration_minutes,
+            question_count,
+            exam:exam_id (
+              exam_name,
+              exam_description
+            )
+          )
+        `)
+        .eq('id', resultId)
+        .single();
+
+      if (error) {
+        console.error('Supabase error fetching test results:', {
+          code: error.code,
+          message: error.message,
+          details: error.details
+        });
+        throw error;
+      }
+
+      console.debug('Fetched test results:', data);
+      
+      setTestResult(data);
+      setTestDetails(data.test);
+      setUserAnswers(data.answers || []);
+      
+    } catch (error) {
+      console.error('Error fetching test results:', error);
+      setError('Failed to load test results');
+    }
+  }, [resultId]);
+
+  useEffect(() => {
+    fetchTestResults();
+  }, [fetchTestResults]);
 
   const handleRetakeTest = async () => {
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      
       if (!user) {
         navigate('/login');
         return;
       }
 
-      console.log('Starting new test attempt...', { testId, userId: user.id });
-
       // Create a new test attempt
-      const { data: newTest, error: createError } = await supabase
-        .from('user_tests')
-        .insert([{
-          exam_test_id: testId,
-          user_id: user.id,
-          status: 'in_progress',
-          start_time: new Date().toISOString(),
-          score: 0,
-          total_questions_answered: 0,
-          time_taken: 0,
-          end_time: null
-        }])
-        .select()
-        .single();
+      const { error } = await testService.createUserTest(testId, user.id);
 
-      if (createError) {
-        console.error('Error creating new test:', createError);
-        throw createError;
-      }
+      if (error) throw error;
 
-      console.log('New test created:', newTest);
-
-      // Navigate to the new test
-      navigate(`/test/${testId}/questions`);
-      
+      // Navigate to the test
+      navigate(`/test/${testId}`);
     } catch (error) {
       console.error('Error starting new test:', error);
-      alert(`Failed to start new test: ${error.message}`);
+      alert('Failed to start new test. Please try again.');
     }
   };
 
@@ -178,7 +151,7 @@ function TestResults() {
         </div>
         <div className="card-body">
           <h5 className="card-title">
-            {testDetails?.exam?.exam_name}: {testDetails?.test_name}
+            {testDetails?.exam?.exam_name}: {testDetails?.name}
           </h5>
           
           <div className="d-flex justify-content-between my-4">
@@ -191,7 +164,7 @@ function TestResults() {
                 ) : 'Not calculated'}
               </p>
               <p>
-                <strong>Questions Answered:</strong> {testResult?.total_questions_answered || 0} / {testDetails?.total_questions}
+                <strong>Questions Answered:</strong> {testResult?.total_questions_answered || 0} / {testDetails?.question_count}
               </p>
               <p>
                 <strong>Correct Answers:</strong> {userAnswers.filter(a => a.is_correct).length} / {userAnswers.length}

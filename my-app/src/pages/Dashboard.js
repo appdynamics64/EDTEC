@@ -1,10 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 import ProfileModal from '../components/ProfileModal';
 import CreateTestModal from '../components/CreateTestModal';
+import ReactDOM from 'react-dom';
+import { fetchAvailableExams, updateUserExam } from '../services/ExamService';
+import { mediaQuery } from '../utils/styleUtils';
+import '../styles/Dashboard.css';
+import '../styles/components.css';
 
 // Time-based icon component
 const TimeIcon = () => {
@@ -19,7 +24,7 @@ const TimeIcon = () => {
   }
 };
 
-const DashboardBanner = ({ userName, onStartQuickTest }) => {
+const DashboardBanner = ({ userName, onStartQuickTest, loading }) => {
   return (
     <div style={styles.bannerContainer}>
       <div style={styles.bannerContent}>
@@ -32,8 +37,9 @@ const DashboardBanner = ({ userName, onStartQuickTest }) => {
             <button 
               style={styles.bannerPrimaryButton}
               onClick={onStartQuickTest}
+              disabled={loading}
             >
-              Start Quick Test
+              {loading ? <span className="loading-spinner"></span> : 'Start Quick Test'}
             </button>
             <button style={styles.bannerSecondaryButton}>
               View Study Plan
@@ -95,6 +101,99 @@ const Dashboard = () => {
   const [customTestLoading, setCustomTestLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showExamSelector, setShowExamSelector] = useState(false);
+  const [examDropdownOpen, setExamDropdownOpen] = useState(false);
+  const [exams, setExams] = useState([]);
+
+  // Add a useRef for handling dropdown positioning and click outside behavior
+  const examDropdownRef = useRef(null);
+  const examButtonRef = useRef(null);
+
+  // Add to useEffect for handling clicks outside the dropdown to close it
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        examDropdownRef.current && 
+        !examDropdownRef.current.contains(event.target) &&
+        examButtonRef.current &&
+        !examButtonRef.current.contains(event.target)
+      ) {
+        setExamDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [examDropdownRef, examButtonRef]);
+
+  // Update the handleScroll function to use only viewport coordinates
+  useEffect(() => {
+    const handleScroll = () => {
+      if (examDropdownOpen && examButtonRef.current && examDropdownRef.current) {
+        const buttonRect = examButtonRef.current.getBoundingClientRect();
+        const dropdownEl = examDropdownRef.current;
+        
+        // Position using viewport coordinates only (no scrollY/scrollX)
+        requestAnimationFrame(() => {
+          // Use viewport coordinates for fixed positioning
+          dropdownEl.style.top = `${buttonRect.bottom}px`;
+          dropdownEl.style.left = `${buttonRect.left}px`;
+          
+          // Ensure it doesn't go off-screen
+          const dropdownRect = dropdownEl.getBoundingClientRect();
+          const viewportWidth = window.innerWidth;
+          const viewportHeight = window.innerHeight;
+          
+          // Handle horizontal overflow
+          if (dropdownRect.right > viewportWidth - 20) {
+            dropdownEl.style.left = `${viewportWidth - dropdownRect.width - 20}px`;
+          }
+          
+          // Handle vertical overflow
+          if (dropdownRect.bottom > viewportHeight - 20) {
+            // If there's more space above, position above the button
+            if (buttonRect.top > (viewportHeight - buttonRect.bottom)) {
+              dropdownEl.style.top = 'auto';
+              dropdownEl.style.bottom = `${viewportHeight - buttonRect.top}px`;
+            } else {
+              // Otherwise, constrain height to fit viewport
+              dropdownEl.style.maxHeight = `${viewportHeight - dropdownRect.top - 20}px`;
+            }
+          }
+        });
+      }
+    };
+
+    // Key point: Only need resize event since fixed position is viewport-relative
+    window.addEventListener('resize', handleScroll, { passive: true });
+    
+    // Position on initial open
+    if (examDropdownOpen) {
+      handleScroll();
+    }
+    
+    return () => {
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [examDropdownOpen]);
+
+  // Add a small function to close dropdown on scroll
+  useEffect(() => {
+    const closeDropdownOnScroll = () => {
+      if (examDropdownOpen) {
+        setExamDropdownOpen(false);
+      }
+    };
+
+    // Close dropdown on scroll - this is a common UX pattern for dropdowns
+    window.addEventListener('scroll', closeDropdownOnScroll);
+    
+    return () => {
+      window.removeEventListener('scroll', closeDropdownOnScroll);
+    };
+  }, [examDropdownOpen]);
 
   useEffect(() => {
     fetchUserProfile();
@@ -150,6 +249,9 @@ const Dashboard = () => {
           } else {
             downloadAvatar(data.avatar_url);
           }
+        }
+        if (!data.preferred_exam) {
+          setShowExamSelector(true);
         }
       }
     } catch (error) {
@@ -213,7 +315,7 @@ const Dashboard = () => {
         return;
       }
 
-      let query = supabase.from('exam_tests');
+      let query = supabase.from('tests');
 
       switch (activeCategory) {
         case 'recommended':
@@ -350,14 +452,11 @@ const Dashboard = () => {
 
   const fetchAvailableSubjects = async () => {
     try {
-      const { data: subjectsData, error: subjectsError } = await supabase
-        .from('subjects')
-        .select('id, name')
-        .order('name');
-        
-      if (subjectsError) throw subjectsError;
+      const { data, error } = await fetchAvailableExams();
       
-      setAvailableSubjects(subjectsData || []);
+      if (error) throw error;
+      
+      setAvailableSubjects(data || []);
     } catch (error) {
       console.error('Error fetching available subjects:', error);
     }
@@ -392,85 +491,41 @@ const Dashboard = () => {
     }));
   };
   
-  const startQuickTest = async () => {
+  const handleStartQuickTest = async () => {
     try {
       setQuickTestLoading(true);
-      setError(null);
       
       // Create a new test
-      const { data: testData, error: testError } = await supabase
+      const { data: newTest, error: createError } = await supabase
         .from('tests')
-        .insert({
-          name: `Quick Test - ${new Date().toLocaleDateString()}`,
-          description: `Quick ${quickTestOptions.questionCount} question test with ${quickTestOptions.difficulty} difficulty`,
-          subject: quickTestOptions.subject,
-          difficulty: quickTestOptions.difficulty,
-          is_quick_test: true
-        })
+        .insert([{
+          name: 'Quick Test',
+          test_description: 'Automatically generated quick test',
+          duration_minutes: 30,
+          question_count: quickTestOptions.questionCount,
+          exam_id: userExam?.id
+        }])
         .select()
         .single();
-        
-      if (testError) throw testError;
-      
-      // Fetch random questions based on options
-      const questionQuery = supabase
-        .from('questions')
-        .select('id')
-        .order('id', { ascending: false });
-        
-      // Apply subject filter if not 'all'
-      if (quickTestOptions.subject !== 'all') {
-        questionQuery.eq('subject_id', quickTestOptions.subject);
-      }
-      
-      // Apply difficulty filter if not 'mixed'
-      if (quickTestOptions.difficulty !== 'mixed') {
-        questionQuery.eq('difficulty', quickTestOptions.difficulty);
-      }
-      
-      // Limit to requested number of questions
-      questionQuery.limit(quickTestOptions.questionCount);
-      
-      const { data: questionsData, error: questionsError } = await questionQuery;
-      
-      if (questionsError) throw questionsError;
-      
-      if (!questionsData || questionsData.length === 0) {
-        throw new Error('No questions available with the selected criteria');
-      }
-      
-      // Create test questions
-      const testQuestions = questionsData.map((q, index) => ({
-        test_id: testData.id,
-        question_id: q.id,
-        order: index + 1
-      }));
-      
-      const { error: testQuestionsError } = await supabase
-        .from('test_questions')
-        .insert(testQuestions);
-        
-      if (testQuestionsError) throw testQuestionsError;
+
+      if (createError) throw createError;
       
       // Create user test record
-      const { data: userTestData, error: userTestError } = await supabase
+      const { error: userTestError } = await supabase
         .from('user_tests')
-        .insert({
+        .insert([{
+          test_id: newTest.id,
           user_id: userData.id,
-          test_id: testData.id,
-          total_questions: questionsData.length
-        })
-        .select()
-        .single();
-        
+          status: 'in_progress',
+          total_questions: quickTestOptions.questionCount
+        }]);
+
       if (userTestError) throw userTestError;
       
-      // Navigate to test
-      navigate(`/test/${testData.id}/questions?user_test_id=${userTestData.id}`);
-      
+      navigate(`/test/${newTest.id}/questions`);
     } catch (error) {
       console.error('Error starting quick test:', error);
-      setError(error.message || 'Failed to start quick test. Please try again.');
+      setError('Failed to start quick test. Please try again.');
     } finally {
       setQuickTestLoading(false);
     }
@@ -579,72 +634,207 @@ const Dashboard = () => {
   const userNameDisplay = userName || 'User';
   const userExamDisplay = userExam || null;
 
-  return (
-    <div style={styles.container}>
-      {/* Top Navigation Bar */}
-      <div style={styles.navbar}>
-        <div style={styles.logo}>
-          <h1 style={typography.textXlBold}>EDTEC</h1>
+  // Enhanced exam selection handling with better UX
+  const handleSelectExam = async (examId, examName) => {
+    try {
+      // Visual feedback - show loading state
+      const selectedButton = document.getElementById(`exam-option-${examId}`);
+      if (selectedButton) {
+        selectedButton.innerHTML = '<span class="loading-spinner"></span> Selecting...';
+        selectedButton.disabled = true;
+      }
+      
+      // Update user profile with selected exam
+      const { success, error } = await updateUserExam(userData.id, examId);
+      
+      if (!success) throw error;
+      
+      // Update local state with smooth transition
+      setUserExam(examName); // Use the name directly for immediate UI update
+      
+      // Provide visual feedback before closing
+      setTimeout(() => {
+        setExamDropdownOpen(false);
+        setShowExamSelector(false);
+        
+        // Refresh dashboard data
+        fetchUserProfile();
+        fetchTests();
+        
+        // Show success toast or feedback
+        const toast = document.createElement('div');
+        toast.className = 'toast success';
+        toast.innerHTML = `<span>✓</span> Exam set to ${examName}`;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+          toast.classList.add('show');
+          setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+              document.body.removeChild(toast);
+            }, 300);
+          }, 3000);
+        }, 600);
+      }, 600);
+    } catch (error) {
+      console.error('Error updating preferred exam:', error);
+      // Show error feedback
+      const toast = document.createElement('div');
+      toast.className = 'toast error';
+      toast.innerHTML = `<span>✕</span> Failed to set exam. Please try again.`;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.classList.add('show');
+        setTimeout(() => {
+          toast.classList.remove('show');
+          setTimeout(() => {
+            document.body.removeChild(toast);
+          }, 300);
+        }, 3000);
+      }, 100);
+    }
+  };
+
+  const renderDropdown = () => {
+    if (!examDropdownOpen) return null;
+    
+    return ReactDOM.createPortal(
+      <div 
+        ref={examDropdownRef}
+        style={styles.examDropdown}
+        role="listbox"
+        tabIndex="-1"
+      >
+        <div style={styles.dropdownHeader}>
+          <span style={typography.textMdBold}>Select Your Exam</span>
+            <button
+            onClick={() => setExamDropdownOpen(false)}
+            style={styles.closeDropdownButton}
+            aria-label="Close dropdown"
+            >
+            ×
+            </button>
         </div>
         
-        <div style={styles.navActions}>
-          {isAdmin && (
-            <button
-              onClick={() => navigate('/admin')}
-              style={styles.adminButton}
-            >
-              Admin Console
-            </button>
-          )}
-          
-          <div style={styles.profileContainer}>
-            <div 
-              onClick={() => setShowProfileMenu(!showProfileMenu)} 
-              style={styles.profileAvatar}
-            >
-              {avatar ? (
-                <img 
-                  src={avatar} 
-                  alt="Profile" 
-                  style={styles.avatarImage}
-                />
-              ) : (
-                <span style={styles.avatarText}>
-                  {userName?.charAt(0)?.toUpperCase() || '?'}
-                </span>
-              )}
+        {availableSubjects && availableSubjects.length > 0 ? (
+          <>
+            <div style={styles.searchContainer}>
+              <input
+                type="text"
+                placeholder="Search exams..."
+                style={styles.searchInput}
+                onChange={(e) => {
+                  // Implement search filter here
+                  const searchText = e.target.value.toLowerCase();
+                  // Filter availableSubjects based on search
+                  // This would be better with a separate filteredSubjects state
+                }}
+              />
             </div>
             
-            {showProfileMenu && (
-              <div style={styles.profileMenu}>
-                <div 
-                  style={styles.profileMenuItem}
-                  onClick={() => {
-                    setShowProfile(true);
-                    setShowProfileMenu(false);
+            <div style={styles.dropdownItems} className="custom-scrollbar">
+              {availableSubjects.map(subject => (
+                <div
+                  id={`exam-option-${subject.id}`}
+                  key={subject.id}
+                  onClick={() => handleSelectExam(subject.id, subject.name)}
+                  style={styles.dropdownItem}
+                  role="option"
+                  aria-selected={false}
+                  tabIndex="0"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      handleSelectExam(subject.id, subject.name);
+                    }
                   }}
                 >
-                  <span role="img" aria-label="profile">👤</span> Profile
+                  <div style={styles.examIconContainer}>
+                    <span style={styles.examIcon}>{subject.icon || '📚'}</span>
+                  </div>
+                  <div style={styles.examTextContainer}>
+                    <span style={styles.examName}>{subject.name}</span>
+                    {subject.description && (
+                      <span style={styles.examDescription}>
+                        {subject.description.length > 60 
+                          ? `${subject.description.substring(0, 60)}...` 
+                          : subject.description}
+                </span>
+              )}
+                  </div>
                 </div>
-                <div 
-                  style={styles.profileMenuItem}
-                  onClick={handleLogout}
+              ))}
+            </div>
+            
+            <div style={styles.dropdownFooter}>
+              <button 
+                  onClick={() => {
+                  setExamDropdownOpen(false);
+                  setShowExamSelector(false);
+                  }}
+                style={styles.laterButton}
                 >
-                  <span role="img" aria-label="logout">🚪</span> Logout
+                I'll choose later
+              </button>
                 </div>
+          </>
+        ) : (
+          <div style={styles.noExamsMessage}>
+            <div style={styles.emptyStateIcon}>🔍</div>
+            <span style={typography.textMdMedium}>No exams available</span>
+            <p style={typography.textSmRegular}>
+              Please check back later or contact support for assistance.
+            </p>
               </div>
             )}
+      </div>,
+      document.body
+    );
+  };
+
+  const fetchExams = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('exams')
+        .select(`
+          *,
+          category:category_id (
+            name,
+            category_description
+          )
+        `)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setExams(data || []);
+    } catch (error) {
+      console.error('Error fetching exams:', error);
+    }
+  }, []);
+
+  return (
+    <div className="dashboard-container scrollable">
+      <div className="dashboard-navbar">
+        <div className="dashboard-logo">
+          <h1 style={typography.textXlBold}>EDTEC</h1>
           </div>
+        
+        <div className="nav-actions">
+          {/* ... rest of the navbar content ... */}
         </div>
       </div>
 
-      <div style={styles.contentContainer}>
-        {/* Add the banner here */}
+      <div className="dashboard-banner">
         <DashboardBanner 
           userName={userNameDisplay} 
-          onStartQuickTest={startQuickTest}
+          onStartQuickTest={handleStartQuickTest}
+          loading={quickTestLoading}
         />
+      </div>
 
+      <div className="dashboard-content">
         {/* Welcome Section with Stats */}
         <div style={styles.welcomeSection}>
           <div style={styles.greetingCard}>
@@ -655,11 +845,30 @@ const Dashboard = () => {
                   <span style={typography.textSmRegular}>{greeting}</span>
                 </div>
                 <h2 style={typography.displayMdBold}>{userNameDisplay}</h2>
+                
+                {userExamDisplay ? (
                 <div style={styles.examBadge}>
-                  <span style={typography.textSmMedium}>
-                    {userExamDisplay}
-                  </span>
+                    <span style={typography.textSmMedium}>{userExamDisplay}</span>
                 </div>
+                ) : (
+                  <div style={styles.examSelectorContainer}>
+                    <button 
+                      ref={examButtonRef}
+                      onClick={() => setExamDropdownOpen(!examDropdownOpen)}
+                      style={styles.examSelectorButton}
+                      aria-expanded={examDropdownOpen}
+                      aria-haspopup="listbox"
+                    >
+                      <span style={typography.textSmMedium}>Select Your Exam</span>
+                      <span style={{
+                        ...styles.dropdownArrow,
+                        transform: examDropdownOpen ? 'rotate(180deg)' : 'rotate(0)'
+                      }}>▼</span>
+                    </button>
+                    
+                    {renderDropdown()}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -788,7 +997,7 @@ const Dashboard = () => {
                   onClick={() => navigate(`/test/${test.id}`)}
                 >
                   <div style={styles.testCardHeader}>
-                    <h3 style={typography.textMdBold}>{test.test_name}</h3>
+                    <h3 style={typography.textMdBold}>{test.name}</h3>
                     {test.user_tests && (
                       <div style={styles.completedBadge}>Completed</div>
                     )}
@@ -798,14 +1007,14 @@ const Dashboard = () => {
                     <div style={styles.testDetail}>
                       <span style={styles.testDetailIcon}>❓</span>
                       <span style={typography.textSmRegular}>
-                        {test.total_questions} questions
+                        {test.question_count} questions
                       </span>
                     </div>
                     
                     <div style={styles.testDetail}>
                       <span style={styles.testDetailIcon}>⏱️</span>
                       <span style={typography.textSmRegular}>
-                        {test.duration} minutes
+                        {test.duration_minutes} minutes
                       </span>
                     </div>
                     
@@ -823,12 +1032,12 @@ const Dashboard = () => {
                         <div 
                           style={{
                             ...styles.scoreProgress,
-                            width: `${(test.user_tests[0]?.score / test.total_questions) * 100}%`
+                            width: `${(test.user_tests[0]?.score / test.question_count) * 100}%`
                           }}
                         ></div>
                       </div>
                       <div style={styles.scoreText}>
-                        Score: {test.user_tests[0]?.score}/{test.total_questions}
+                        Score: {test.user_tests[0]?.score}/{test.question_count}
                       </div>
                     </div>
                   ) : (
@@ -922,57 +1131,6 @@ const Dashboard = () => {
 };
 
 const styles = {
-  container: {
-    backgroundColor: '#F5F7FA',
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  navbar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px 24px',
-    backgroundColor: colors.backgroundPrimary,
-    boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
-    position: 'sticky',
-    top: 0,
-    zIndex: 10,
-  },
-  logo: {
-    color: colors.brandPrimary,
-  },
-  navActions: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  profileContainer: {
-    position: 'relative',
-  },
-  profileMenu: {
-    position: 'absolute',
-    top: '60px',
-    right: 0,
-    backgroundColor: colors.backgroundPrimary,
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-    padding: '8px 0',
-    minWidth: '160px',
-    zIndex: 100,
-  },
-  profileMenuItem: {
-    padding: '10px 16px',
-    cursor: 'pointer',
-    ...typography.textSmMedium,
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    transition: 'background-color 0.2s',
-    ':hover': {
-      backgroundColor: colors.backgroundSecondary,
-    }
-  },
   contentContainer: {
     padding: '24px',
     display: 'flex',
@@ -1293,8 +1451,9 @@ const styles = {
     textAlign: 'center',
   },
   emptyStateIcon: {
-    fontSize: '48px',
+    fontSize: '32px',
     marginBottom: '8px',
+    opacity: 0.7,
   },
   createTestButton: {
     padding: '10px 24px',
@@ -1448,6 +1607,217 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
+  },
+  examSelectorContainer: {
+    position: 'relative',
+    marginTop: '12px',
+    zIndex: 500,
+  },
+  examSelectorButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '20px',
+    padding: '8px 16px',
+    cursor: 'pointer',
+    ...typography.textSmMedium,
+    transition: 'all 0.2s ease',
+    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
+    ':hover': {
+      backgroundColor: 'rgba(255, 255, 255, 0.3)',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 8px rgba(0, 0, 0, 0.15)',
+    },
+    ':active': {
+      transform: 'translateY(0)',
+      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
+    },
+    ':focus': {
+      outline: 'none',
+      boxShadow: `0 0 0 2px ${colors.brandPrimary}, 0 1px 2px rgba(0, 0, 0, 0.1)`,
+    },
+  },
+  dropdownArrow: {
+    fontSize: '10px',
+    opacity: 0.8,
+    transition: 'transform 0.2s ease',
+  },
+  examDropdown: {
+    position: 'fixed',
+    top: 'auto',
+    left: 'auto',
+    width: '320px',
+    maxWidth: '90vw',
+    backgroundColor: colors.backgroundPrimary,
+    borderRadius: '12px',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15), 0 4px 8px rgba(0, 0, 0, 0.1)',
+    zIndex: 1000,
+    overflow: 'hidden',
+    border: `1px solid ${colors.borderPrimary}`,
+    opacity: 1,
+    animation: 'dropdownFadeIn 0.2s ease-in-out',
+    transition: 'top 0.05s ease-out, left 0.05s ease-out',
+    transformOrigin: 'top left',
+  },
+  dropdownHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px',
+    borderBottom: `1px solid ${colors.borderPrimary}`,
+    backgroundColor: colors.backgroundPrimary,
+    position: 'sticky',
+    top: 0,
+    zIndex: 2,
+  },
+  closeDropdownButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '24px',
+    color: colors.textSecondary,
+    cursor: 'pointer',
+    padding: '4px',
+    lineHeight: 0.8,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '28px',
+    height: '28px',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      backgroundColor: colors.backgroundSecondary,
+      color: colors.textPrimary,
+    },
+    ':focus': {
+      outline: 'none',
+      boxShadow: `0 0 0 2px ${colors.brandPrimary}`,
+    },
+  },
+  searchContainer: {
+    padding: '12px 16px',
+    borderBottom: `1px solid ${colors.borderPrimary}`,
+    backgroundColor: colors.backgroundPrimary,
+    position: 'sticky',
+    top: '53px',
+    zIndex: 1,
+  },
+  searchInput: {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '6px',
+    border: `1px solid ${colors.borderPrimary}`,
+    backgroundColor: colors.backgroundSecondary,
+    color: colors.textPrimary,
+    ...typography.textSmRegular,
+    transition: 'all 0.2s ease',
+    ':focus': {
+      outline: 'none',
+      borderColor: colors.brandPrimary,
+      boxShadow: `0 0 0 2px ${colors.brandPrimaryLight}`,
+    },
+    '::placeholder': {
+      color: colors.textSecondary,
+      opacity: 0.7,
+    },
+  },
+  dropdownItems: {
+    maxHeight: '300px',
+    overflowY: 'auto',
+    paddingBottom: '8px',
+    WebkitOverflowScrolling: 'touch',
+  },
+  dropdownItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 16px',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    position: 'relative',
+    ':hover': {
+      backgroundColor: colors.backgroundSecondary,
+    },
+    ':focus': {
+      outline: 'none',
+      backgroundColor: colors.backgroundSecondary,
+    },
+    ':active': {
+      backgroundColor: colors.backgroundTertiary,
+    },
+  },
+  examIconContainer: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '8px',
+    backgroundColor: colors.backgroundSecondary,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '20px',
+    flexShrink: 0,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+  },
+  examTextContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  examName: {
+    ...typography.textMdMedium,
+    color: colors.textPrimary,
+    marginBottom: '2px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  examDescription: {
+    ...typography.textSmRegular,
+    color: colors.textSecondary,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  dropdownFooter: {
+    padding: '12px 16px',
+    borderTop: `1px solid ${colors.borderPrimary}`,
+    display: 'flex',
+    justifyContent: 'flex-end',
+    backgroundColor: colors.backgroundPrimary,
+    position: 'sticky',
+    bottom: 0,
+    zIndex: 2,
+  },
+  laterButton: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    padding: '8px 12px',
+    color: colors.textSecondary,
+    cursor: 'pointer',
+    ...typography.textSmMedium,
+    transition: 'all 0.2s ease',
+    borderRadius: '6px',
+    ':hover': {
+      backgroundColor: colors.backgroundSecondary,
+      color: colors.textPrimary,
+    },
+    ':focus': {
+      outline: 'none',
+      boxShadow: `0 0 0 2px ${colors.brandPrimary}`,
+    },
+  },
+  noExamsMessage: {
+    padding: '32px 16px',
+    textAlign: 'center',
+    color: colors.textSecondary,
+    ...typography.textSmRegular,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '12px',
   },
 };
 

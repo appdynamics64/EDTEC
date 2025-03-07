@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
@@ -15,12 +15,173 @@ const TestScreen = () => {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentTestId, setCurrentTestId] = useState(null);
-  const [existingSession, setExistingSession] = useState(null);
+  const [existingSession] = useState(null);
   const [showExistingSessionModal, setShowExistingSessionModal] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showFinishModal, setShowFinishModal] = useState(false);
-  const debugLogRef = useRef([]);
+  const [testDetails, setTestDetails] = useState(null);
+  const [error, setError] = useState(null);
+
+  // Define createUserTestRecord with useCallback
+  const createUserTestRecord = useCallback(async () => {
+    try {
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        throw new Error(userError?.message || 'No user found');
+      }
+      
+      // Get existing in-progress tests
+      const { data: userTests, error: userTestError } = await supabase
+        .from('user_tests')
+        .select('id, status')
+        .eq('test_id', testId)
+        .eq('user_id', user.id)
+        .eq('status', 'in_progress')
+        .order('created_at', { ascending: false });
+      
+      if (userTestError) throw userTestError;
+      
+      // If there's an existing in-progress test, use that
+      if (userTests && userTests.length > 0) {
+        console.log('Found existing test:', userTests[0]);
+        setCurrentTestId(userTests[0].id);
+        return userTests[0].id;
+      }
+      
+      // Otherwise create a new test
+      const { data, error: insertError } = await supabase
+        .from('user_tests')
+        .insert([{
+          test_id: testId,
+          user_id: user.id,
+          status: 'in_progress',
+          start_time: new Date().toISOString()
+        }])
+        .select();
+      
+      if (insertError) throw insertError;
+      
+      if (!data || data.length === 0) {
+        throw new Error('Failed to create test record');
+      }
+      
+      console.log('Created new test:', data[0]);
+      setCurrentTestId(data[0].id);
+      return data[0].id;
+    } catch (error) {
+      console.error('Error creating user test record:', error);
+      return null;
+    }
+  }, [testId]);
+
+  // Define all function callbacks before useEffects
+  const fetchTestDetails = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tests')
+        .select(`
+          id,
+          name,
+          test_description,
+          duration_minutes,
+          question_count,
+          exam:exam_id (
+            exam_name,
+            exam_description
+          )
+        `)
+        .eq('id', testId)
+        .single();
+
+      if (error) throw error;
+      setTestDetails(data);
+    } catch (error) {
+      console.error('Error fetching test details:', error);
+      setError('Failed to load test details');
+    }
+  }, [testId]);
+
+  const fetchQuestions = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('test_questions')
+        .select(`
+          *,
+          question:question_id (*)
+        `)
+        .eq('test_id', testId)
+        .order('question_order');
+
+      if (error) throw error;
+      
+      setQuestions(data?.map(q => q.question) || []);
+    } catch (error) {
+      console.error('Error fetching questions:', error);
+    }
+  }, [testId]);
+
+  // Define handleFinishTest with useCallback
+  const handleFinishTest = useCallback(async () => {
+    try {
+      setIsSubmitting(true);
+      console.log('Finishing test');
+      
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        throw new Error(userError?.message || 'No user found');
+      }
+
+      const { data: userTests, error: userTestError } = await supabase
+        .from('user_tests')
+        .select(`
+          id,
+          status,
+          score,
+          total_questions,
+          time_taken,
+          created_at,
+          test:test_id (
+            id,
+            name,
+            duration_minutes
+          )
+        `)
+        .eq('test_id', testId)
+        .eq('user_id', user.id)
+        .eq('status', 'in_progress')
+        .order('created_at', { ascending: false });
+
+      if (userTestError || !userTests?.length) {
+        throw new Error(userTestError?.message || 'No active test found');
+      }
+
+      const userTestId = userTests[0].id;
+
+      const { error: updateError } = await supabase
+        .from('user_tests')
+        .update({ 
+          status: 'completed',
+          end_time: new Date().toISOString()
+        })
+        .eq('id', userTestId);
+
+      if (updateError) throw updateError;
+
+      console.log('Navigating to results:', `/test/${testId}/results/${userTestId}`);
+      navigate(`/test/${testId}/results/${userTestId}`);
+      
+    } catch (error) {
+      console.error('Error in handleFinishTest:', error);
+      alert(`Failed to submit test: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+      setShowFinishModal(false);
+    }
+  }, [testId, navigate]);
 
   useEffect(() => {
     // Clean up any stale in-progress tests when the component mounts
@@ -47,7 +208,7 @@ const TestScreen = () => {
   useEffect(() => {
     fetchTestDetails();
     fetchQuestions();
-  }, [testId, fetchTestDetails, fetchQuestions]);
+  }, [fetchTestDetails, fetchQuestions]);
 
   useEffect(() => {
     const initializeTest = async () => {
@@ -62,11 +223,14 @@ const TestScreen = () => {
           return;
         }
 
+        // Create or get existing test record
+        await createUserTestRecord();
+        
         // Check for existing in-progress test
         const { data: existingTest, error: existingError } = await supabase
           .from('user_tests')
           .select('id, status')
-          .eq('exam_test_id', testId)
+          .eq('test_id', testId)
           .eq('user_id', user.id)
           .eq('status', 'in_progress')
           .single();
@@ -85,7 +249,7 @@ const TestScreen = () => {
         const { data: newTest, error: createError } = await supabase
           .from('user_tests')
           .insert([{
-            exam_test_id: testId,
+            test_id: testId,
             user_id: user.id,
             status: 'in_progress',
             start_time: new Date().toISOString(),
@@ -108,13 +272,13 @@ const TestScreen = () => {
     };
 
     initializeTest();
-  }, [testId, navigate]);
+  }, [navigate, testId, createUserTestRecord]);
 
   // Set up countdown timer when test data is loaded
   useEffect(() => {
-    if (testData && testData.duration) {
+    if (testData && testData.duration_minutes) {
       // Convert duration from minutes to seconds
-      setTimeRemaining(testData.duration * 60);
+      setTimeRemaining(testData.duration_minutes * 60);
       
       const timer = setInterval(() => {
         setTimeRemaining(prev => {
@@ -131,335 +295,7 @@ const TestScreen = () => {
     }
   }, [testData, handleFinishTest]);
 
-  const fetchTestDetails = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('exam_tests')
-        .select('*')
-        .eq('id', testId)
-        .single();
-        
-      if (error) throw error;
-      console.log("Test details:", data);
-      setTestData(data);
-    } catch (error) {
-      console.error('Error fetching test details:', error);
-    }
-  };
-
-  const fetchQuestions = async () => {
-    try {
-      setLoading(true);
-      console.log("Fetching questions for test:", testId);
-      
-      // Check if testId is valid
-      if (!testId) {
-        console.error("Invalid testId:", testId);
-        setLoading(false);
-        return;
-      }
-      
-      // First, verify the test exists
-      const { data: testExists, error: testExistsError } = await supabase
-        .from('exam_tests')
-        .select('id, exam_id, test_name')
-        .eq('id', testId)
-        .single();
-        
-      if (testExistsError) {
-        console.error('Error verifying test exists:', testExistsError);
-        setLoading(false);
-        return;
-      }
-      
-      if (!testExists) {
-        console.error('Test not found with ID:', testId);
-        setLoading(false);
-        return;
-      }
-      
-      console.log("Test exists:", testExists);
-      
-      // Get the test questions from the junction table
-      const { data: testQuestions, error: testQuestionsError } = await supabase
-        .from('exam_test_questions')
-        .select('question_id, question_order')
-        .eq('exam_test_id', testId);
-        
-      if (testQuestionsError) {
-        console.error('Error fetching test questions:', testQuestionsError);
-        setLoading(false);
-        return;
-      }
-      
-      console.log("Test questions from junction table:", testQuestions);
-      
-      // If no questions are found, try to create some
-      if (!testQuestions || testQuestions.length === 0) {
-        console.log("No questions found for this test. Attempting to create test questions...");
-        
-        // Get questions for this exam
-        const { data: examQuestions, error: examQuestionsError } = await supabase
-          .from('questions')
-          .select('id, question_text')
-          .eq('exam_id', testExists.exam_id)
-          .eq('is_active', true)
-          .limit(10);
-          
-        if (examQuestionsError) {
-          console.error('Error fetching exam questions:', examQuestionsError);
-          setLoading(false);
-          return;
-        }
-        
-        console.log("Found exam questions:", examQuestions);
-        
-        if (!examQuestions || examQuestions.length === 0) {
-          console.log("No questions found for this exam. Creating a sample question...");
-          
-          // Create a sample question for testing
-          const { data: sampleQuestion, error: sampleQuestionError } = await supabase
-            .from('questions')
-            .insert([{
-              exam_id: testExists.exam_id,
-              question_text: 'Sample question for testing',
-              choices: { 'A': 'Option A', 'B': 'Option B', 'C': 'Option C', 'D': 'Option D' },
-              correct_answer: 'A',
-              is_active: true
-            }])
-            .select();
-            
-          if (sampleQuestionError) {
-            console.error('Error creating sample question:', sampleQuestionError);
-            setLoading(false);
-            return;
-          }
-            
-          console.log("Created sample question:", sampleQuestion);
-            
-          if (!sampleQuestion || sampleQuestion.length === 0) {
-            console.error("Failed to create sample question");
-            setLoading(false);
-            return;
-          }
-            
-          // Add the sample question to the test
-          const { data: testQuestion, error: testQuestionError } = await supabase
-            .from('exam_test_questions')
-            .insert([{
-              exam_test_id: testId,
-              question_id: sampleQuestion[0].id,
-              question_order: 1
-            }])
-            .select();
-            
-          if (testQuestionError) {
-            console.error('Error adding sample question to test:', testQuestionError);
-            setLoading(false);
-            return;
-          }
-            
-          console.log("Added sample question to test:", testQuestion);
-            
-          // Set the questions array with the sample question
-          setQuestions(sampleQuestion);
-          setLoading(false);
-          return;
-        }
-        
-        // Create test questions
-        const testQuestionsToInsert = examQuestions.map((q, index) => ({
-          exam_test_id: testId,
-          question_id: q.id,
-          question_order: index + 1
-        }));
-        
-        console.log("Inserting test questions:", testQuestionsToInsert);
-        
-        const { data: insertedQuestions, error: insertError } = await supabase
-          .from('exam_test_questions')
-          .insert(testQuestionsToInsert)
-          .select();
-          
-        if (insertError) {
-          console.error('Error creating test questions:', insertError);
-          setLoading(false);
-          return;
-        }
-        
-        console.log("Created test questions:", insertedQuestions);
-        
-        // Set the questions array with the exam questions
-        setQuestions(examQuestions);
-        setLoading(false);
-        return;
-      }
-      
-      // If we have test questions, get the question details
-      const questionIds = testQuestions.map(q => q.question_id);
-      console.log("Question IDs to fetch:", questionIds);
-      
-      if (questionIds.length === 0) {
-        console.error("No question IDs found");
-        setLoading(false);
-        return;
-      }
-      
-      const { data: questionDetails, error: questionsError } = await supabase
-        .from('questions')
-        .select('*')
-        .in('id', questionIds);
-        
-      if (questionsError) {
-        console.error('Error fetching question details:', questionsError);
-        setLoading(false);
-        return;
-      }
-      
-      console.log("Question details fetched:", questionDetails);
-      
-      if (!questionDetails || questionDetails.length === 0) {
-        console.error("No question details found for IDs:", questionIds);
-        setLoading(false);
-        return;
-      }
-      
-      // Set the questions array
-      setQuestions(questionDetails);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error in fetchQuestions:', error);
-      setLoading(false);
-    }
-  };
-
-  const createUserTestRecord = async () => {
-    try {
-      // Get the current user
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        console.error("User not authenticated");
-        return null;
-      }
-      
-      console.log("Creating/checking user test record for user:", user.id, "and test:", testId);
-      
-      // First, check if there's an existing in-progress test
-      const { data: existingTests, error: findError } = await supabase
-        .from('user_tests')
-        .select('id, status, created_at, start_time')
-        .eq('exam_test_id', testId)
-        .eq('user_id', user.id)
-        .eq('status', 'in_progress')
-        .order('created_at', { ascending: false });
-        
-      if (findError) {
-        console.error("Error finding user tests:", findError);
-      }
-      
-      console.log("Found existing tests:", existingTests);
-      
-      // If there are multiple in-progress tests, mark all but the most recent as abandoned
-      if (existingTests && existingTests.length > 1) {
-        console.log(`Found ${existingTests.length} in-progress tests, cleaning up...`);
-        
-        for (let i = 1; i < existingTests.length; i++) {
-          const { error: updateError } = await supabase
-            .from('user_tests')
-            .update({ status: 'abandoned' })
-            .eq('id', existingTests[i].id);
-            
-          if (updateError) {
-            console.error(`Error abandoning test ${existingTests[i].id}:`, updateError);
-          }
-        }
-      }
-      
-      // If there's at least one in-progress test, use the most recent one
-      if (existingTests && existingTests.length > 0) {
-        const mostRecent = existingTests[0];
-        
-        // Check if the test is older than 2 hours
-        const startTime = new Date(mostRecent.start_time || mostRecent.created_at);
-        const hoursElapsed = (Date.now() - startTime.getTime()) / (1000 * 60 * 60);
-        
-        if (hoursElapsed > 2) {
-          console.log("Test is older than 2 hours, marking as abandoned");
-          
-          const { error: updateError } = await supabase
-            .from('user_tests')
-            .update({ status: 'abandoned' })
-            .eq('id', mostRecent.id);
-            
-          if (updateError) {
-            console.error("Error abandoning old test:", updateError);
-          }
-          
-          // Create a new test since the old one was abandoned
-          return createNewTest(user.id);
-        }
-        
-        console.log("Using existing test:", mostRecent);
-        return mostRecent;
-      }
-      
-      // If no in-progress test exists, create a new one
-      return createNewTest(user.id);
-    } catch (error) {
-      console.error("Error in createUserTestRecord:", error);
-      return null;
-    }
-  };
-
-  // Helper function to create a new test with string ID
-  const createNewTest = async (userId) => {
-    console.log("Creating new test for user:", userId);
-    
-    try {
-      // Generate a unique string ID to avoid UUID validation issues
-      const uniqueId = `test-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-      
-      const { data: newTest, error: createError } = await supabase
-        .from('user_tests')
-        .insert({
-          id: uniqueId,
-          user_id: userId,
-          exam_test_id: testId,
-          status: 'in_progress',
-          start_time: new Date().toISOString(),
-          total_questions: questions.length
-        })
-        .select()
-        .single();
-        
-      if (createError) {
-        console.error("Error creating user test:", createError);
-        return null;
-      }
-      
-      console.log("Created new user test:", newTest);
-      return newTest;
-    } catch (error) {
-      console.error("Error in createNewTest:", error);
-      return null;
-    }
-  };
-
-  // Add this useEffect to create the user test record when questions are loaded
-  useEffect(() => {
-    if (questions.length > 0 && !loading) {
-      createUserTestRecord();
-    }
-  }, [questions, loading]);
-
-  const formatTime = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const handleAnswerSelect = async (questionId, answer) => {
+  const handleSubmitAnswer = async (questionId, answer) => {
     try {
       console.log('Saving answer:', { questionId, answer, currentTestId });
       
@@ -467,13 +303,7 @@ const TestScreen = () => {
         console.error('No current test ID found');
         return;
       }
-
-      // Update local state
-      setSelectedAnswers(prev => ({
-        ...prev,
-        [questionId]: answer
-      }));
-
+      
       // Save to database
       const question = questions.find(q => q.id.toString() === questionId.toString());
       const isCorrect = question?.correct_answer === answer;
@@ -494,9 +324,15 @@ const TestScreen = () => {
         throw error;
       }
 
+      // Update local state
+      setSelectedAnswers(prev => ({
+        ...prev,
+        [questionId]: answer
+      }));
+
       console.log('Answer saved successfully');
     } catch (error) {
-      console.error('Error in handleAnswerSelect:', error);
+      console.error('Error in handleSubmitAnswer:', error);
     }
   };
 
@@ -512,19 +348,6 @@ const TestScreen = () => {
     }
   };
 
-  const logDebug = (message, data = null) => {
-    const timestamp = new Date().toISOString();
-    const logEntry = {
-      timestamp,
-      message,
-      data: data ? JSON.stringify(data, null, 2) : null
-    };
-    
-    console.log(`[DEBUG] ${timestamp} - ${message}`, data);
-    debugLogRef.current = [...debugLogRef.current, logEntry];
-    setDebugLogs(debugLogRef.current);
-  };
-
   useEffect(() => {
     const handleKeyDown = (e) => {
       // Ctrl+Shift+D to toggle debug mode
@@ -536,108 +359,6 @@ const TestScreen = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-
-  const handleFinishTest = async () => {
-    try {
-      setIsSubmitting(true);
-      console.log('Starting test submission...', { currentTestId });
-
-      if (!currentTestId) {
-        throw new Error('No active test found');
-      }
-
-      // Calculate final score
-      const { data: answers, error: answersError } = await supabase
-        .from('user_test_questions')
-        .select('is_correct')
-        .eq('user_test_id', currentTestId);
-
-      if (answersError) throw answersError;
-
-      const totalQuestions = questions.length;
-      const answeredQuestions = Object.keys(selectedAnswers).length;
-      const correctAnswers = answers?.filter(a => a.is_correct)?.length || 0;
-      const scorePercentage = (correctAnswers / totalQuestions) * 100;
-
-      console.log('Calculated score:', {
-        totalQuestions,
-        answeredQuestions,
-        correctAnswers,
-        scorePercentage
-      });
-
-      // Update test status
-      const { error: updateError } = await supabase
-        .from('user_tests')
-        .update({ 
-          status: 'completed',
-          end_time: new Date().toISOString(),
-          score: scorePercentage,
-          total_questions_answered: answeredQuestions,
-          time_taken: Math.round((new Date() - new Date(testData?.start_time)) / 60000) // minutes
-        })
-        .eq('id', currentTestId);
-
-      if (updateError) throw updateError;
-
-      console.log('Test completed successfully');
-      navigate(`/test/${testId}/results/${currentTestId}`);
-      
-    } catch (error) {
-      console.error('Error in handleFinishTest:', error);
-      alert(`Failed to submit test: ${error.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // This is the function for the Finish button that appears on last question
-  const handleLastQuestionFinish = async () => {
-    try {
-      setIsSubmitting(true);
-      console.log('Last question finish button clicked');
-      
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      console.log('User data:', user);
-      
-      if (userError || !user) {
-        throw new Error(userError?.message || 'No user found');
-      }
-
-      const { data: userTests, error: userTestError } = await supabase
-        .from('user_tests')
-        .select('*')
-        .eq('exam_test_id', testId)
-        .eq('user_id', user.id)
-        .eq('status', 'in_progress')
-        .order('created_at', { ascending: false });
-
-      if (userTestError || !userTests?.length) {
-        throw new Error(userTestError?.message || 'No active test found');
-      }
-
-      const userTestId = userTests[0].id;
-
-      const { error: updateError } = await supabase
-        .from('user_tests')
-        .update({ 
-          status: 'completed',
-          end_time: new Date().toISOString()
-        })
-        .eq('id', userTestId);
-
-      if (updateError) throw updateError;
-
-      console.log('Navigating to results:', `/test/${testId}/results/${userTestId}`);
-      navigate(`/test/${testId}/results/${userTestId}`);
-      
-    } catch (error) {
-      console.error('Error in handleLastQuestionFinish:', error);
-      alert(`Failed to submit test: ${error.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   // Add a function to handle continuing an existing session
   const handleContinueSession = () => {
@@ -677,7 +398,7 @@ const TestScreen = () => {
         return;
       }
       
-      const newTest = await createNewTest(user.id);
+      const newTest = await createUserTestRecord();
       
       // Reset the test state
       setCurrentQuestion(0);
@@ -769,19 +490,19 @@ const TestScreen = () => {
             
             <div style={styles.optionsContainer}>
               {questions[currentQuestion]?.choices && 
-                Object.entries(questions[currentQuestion].choices).map(([key, value]) => (
-                  <button
-                    key={key}
-                    style={{
-                      ...styles.optionButton,
+               Object.entries(questions[currentQuestion].choices).map(([key, value]) => (
+                <button
+                  key={key}
+                  style={{
+                    ...styles.optionButton,
                       ...(selectedAnswers[questions[currentQuestion].id] === key ? styles.selectedOption : {})
-                    }}
-                    onClick={() => handleAnswerSelect(questions[currentQuestion].id, key)}
-                  >
-                    <span style={styles.optionKey}>{key}</span>
-                    <span style={styles.optionText}>{value}</span>
-                  </button>
-                ))}
+                  }}
+                    onClick={() => handleSubmitAnswer(questions[currentQuestion].id, key)}
+                >
+                  <span style={styles.optionKey}>{key}</span>
+                  <span style={styles.optionText}>{value}</span>
+                </button>
+              ))}
             </div>
           </div>
           
