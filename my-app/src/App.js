@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { SSRProvider } from 'react-bootstrap';
+import React from 'react';
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { supabase } from './config/supabaseClient';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -16,144 +15,133 @@ import QuestionDetails from './pages/QuestionDetails';
 import AuthCallback from './pages/AuthCallback';
 import TestsListingPage from './pages/TestsListingPage';
 import AdminDebugger from './pages/AdminDebugger';
+import ResetPassword from './pages/ResetPassword';
+import ExamSelectionOnboarding from './pages/ExamSelectionOnboarding';
 import './App.css';
-import 'bootstrap/dist/css/bootstrap.min.css';
+import './styles/global.css';
+import './styles/components.css';
+import './styles/variables.css';
+import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 
-const ProtectedRoute = ({ children }) => {
-  const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState(null);
-
-  useEffect(() => {
-    // Check auth status
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (loading) {
-    return <div>Loading...</div>;
-  }
-
-  if (!session) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return children;
+const ErrorPage = () => {
+  return (
+    <div style={{ 
+      padding: '20px', 
+      textAlign: 'center', 
+      fontFamily: 'system-ui' 
+    }}>
+      <h1>Oops!</h1>
+      <p>Sorry, an unexpected error has occurred.</p>
+      <button onClick={() => window.location.href = '/'}>
+        Go to Home
+      </button>
+    </div>
+  );
 };
+
+const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <Navigate to="/dashboard" replace />,
+    errorElement: <ErrorPage />
+  },
+  {
+    path: '/login',
+    element: <Login />,
+    errorElement: <ErrorPage />
+  },
+  {
+    path: '/signup',
+    element: <Signup />,
+    errorElement: <ErrorPage />
+  },
+  {
+    path: '/confirmation',
+    element: <Confirmation />,
+    errorElement: <ErrorPage />
+  },
+  {
+    path: '/auth/callback',
+    element: <AuthCallback />,
+    errorElement: <ErrorPage />
+  },
+  {
+    path: '/reset-password',
+    element: <ResetPassword />,
+    errorElement: <ErrorPage />
+  },
+  {
+    path: '/',
+    element: <ProtectedRoute />,
+    errorElement: <ErrorPage />,
+    children: [
+      {
+        path: 'dashboard',
+        element: (
+          <ErrorBoundary>
+            <Dashboard />
+          </ErrorBoundary>
+        )
+      },
+      {
+        path: 'exams',
+        element: <ExamSelectionOnboarding />
+      },
+      {
+        path: 'exam/:examId',
+        element: <ExamDetails />
+      },
+      {
+        path: 'exam/:examId/tests',
+        element: <TestsListingPage />
+      },
+      {
+        path: 'test/:testId',
+        element: <TestDetails />
+      },
+      {
+        path: 'test/:testId/questions',
+        element: <TestScreen />
+      },
+      {
+        path: 'test/:testId/results/:resultId',
+        element: <TestResults />
+      },
+      {
+        path: 'tests',
+        element: <TestsListingPage />
+      },
+      {
+        path: 'admin',
+        element: <AdminConsole />
+      },
+      {
+        path: 'admin/question/:questionId',
+        element: <QuestionDetails />
+      },
+      {
+        path: 'admin/debugger',
+        element: <AdminDebugger />
+      }
+    ]
+  },
+  {
+    path: '*',
+    element: <Navigate to="/dashboard" replace />,
+    errorElement: <ErrorPage />
+  }
+]);
 
 function App() {
   return (
-    <SSRProvider>
-      <Router>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/confirmation" element={<Confirmation />} />
-          <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/exam-selection" element={<ExamSelection />} />
-          
-          {/* Protected Routes */}
-          <Route 
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route 
-            path="/tests" 
-            element={
-              <ProtectedRoute>
-                <TestsListingPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/test/:testId" 
-            element={
-              <ProtectedRoute>
-                <TestDetails />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/test/:testId/questions" 
-            element={
-              <ProtectedRoute>
-                <TestScreen />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/test/:testId/results/:resultId" 
-            element={
-              <ProtectedRoute>
-                <TestResults />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/admin" 
-            element={
-              <ProtectedRoute>
-                <AdminConsole />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/admin/exam/:examId" 
-            element={
-              <ProtectedRoute>
-                <ExamDetails />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/admin/question/:questionId" 
-            element={
-              <ProtectedRoute>
-                <QuestionDetails />
-              </ProtectedRoute>
-            } 
-          />
-          <Route
-            path="/admin/debugger"
-            element={
-              <ProtectedRoute>
-                <AdminDebugger />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Redirect root to dashboard */}
-          <Route 
-            path="/" 
-            element={
-              <ProtectedRoute>
-                <Navigate to="/dashboard" replace />
-              </ProtectedRoute>
-            } 
-          />
-
-          {/* Catch all route - redirect to dashboard */}
-          <Route 
-            path="*" 
-            element={<Navigate to="/dashboard" replace />} 
-          />
-        </Routes>
-      </Router>
-    </SSRProvider>
+    <RouterProvider 
+      router={router} 
+      future={{ 
+        v7_startTransition: true, 
+        v7_relativeSplatPath: true 
+      }} 
+    />
   );
 }
 

@@ -22,7 +22,7 @@ const TestResultRecovery = () => {
     const fetchTestDetails = async () => {
       try {
         const { data, error } = await supabase
-          .from('exam_tests')
+          .from('tests')
           .select('*')
           .eq('id', testId)
           .single();
@@ -52,10 +52,9 @@ const TestResultRecovery = () => {
         .insert({
           id: stringId,
           user_id: testResults.user_id,
-          exam_test_id: testResults.exam_test_id,
+          test_id: testResults.test_id || testResults.exam_test_id,
           status: 'completed',
           score: testResults.score,
-          total_questions: testResults.total_questions,
           total_questions_answered: testResults.total_questions_answered,
           start_time: new Date(new Date(testResults.timestamp).getTime() - 1800000).toISOString(),
           end_time: testResults.timestamp,
@@ -117,11 +116,11 @@ const TestResultRecovery = () => {
         <div style={styles.resultsContainer}>
           <div style={styles.resultItem}>
             <span style={typography.textMdRegular}>Score:</span>
-            <span style={typography.textMdBold}>{testResults.score} / {testResults.total_questions}</span>
+            <span style={typography.textMdBold}>{testResults.score} / {testData.question_count}</span>
           </div>
           <div style={styles.resultItem}>
             <span style={typography.textMdRegular}>Questions Answered:</span>
-            <span style={typography.textMdBold}>{testResults.total_questions_answered} / {testResults.total_questions}</span>
+            <span style={typography.textMdBold}>{testResults.total_questions_answered} / {testData.question_count}</span>
           </div>
           <div style={styles.resultItem}>
             <span style={typography.textMdRegular}>Completion Time:</span>
