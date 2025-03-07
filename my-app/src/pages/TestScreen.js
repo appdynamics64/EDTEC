@@ -13,14 +13,13 @@ const TestScreen = () => {
   const [timeRemaining, setTimeRemaining] = useState(null);
   const [testData, setTestData] = useState(null);
   const [loading, setLoading] = useState(true);
-<<<<<<< HEAD
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentTestId, setCurrentTestId] = useState(null);
-=======
   const [existingSession, setExistingSession] = useState(null);
   const [showExistingSessionModal, setShowExistingSessionModal] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [debugLogs, setDebugLogs] = useState([]);
+  const [showFinishModal, setShowFinishModal] = useState(false);
   const debugLogRef = useRef([]);
 
   useEffect(() => {
@@ -44,12 +43,11 @@ const TestScreen = () => {
     
     cleanupStaleSessions();
   }, []);
->>>>>>> 768f45e5b78e8b478bbf3c495fac57468ebdd7dc
 
   useEffect(() => {
     fetchTestDetails();
     fetchQuestions();
-  }, [testId]);
+  }, [testId, fetchTestDetails, fetchQuestions]);
 
   useEffect(() => {
     const initializeTest = async () => {
@@ -131,7 +129,7 @@ const TestScreen = () => {
       
       return () => clearInterval(timer);
     }
-  }, [testData]);
+  }, [testData, handleFinishTest]);
 
   const fetchTestDetails = async () => {
     try {
@@ -541,7 +539,6 @@ const TestScreen = () => {
 
   const handleFinishTest = async () => {
     try {
-<<<<<<< HEAD
       setIsSubmitting(true);
       console.log('Starting test submission...', { currentTestId });
 
@@ -639,106 +636,6 @@ const TestScreen = () => {
       alert(`Failed to submit test: ${error.message}`);
     } finally {
       setIsSubmitting(false);
-=======
-      setLoading(true);
-      setShowFinishModal(false);
-      
-      // Get the current user
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        setLoading(false);
-        alert("You must be logged in to complete a test.");
-        return;
-      }
-      
-      // Calculate results
-      const attempted = Object.keys(selectedAnswers).length;
-      let correct = 0;
-      
-      Object.entries(selectedAnswers).forEach(([qIndex, answer]) => {
-        const question = questions[parseInt(qIndex)];
-        if (!question || !question.correct_answer) return;
-        
-        if (typeof question.correct_answer === 'string') {
-          if (question.correct_answer === answer) correct++;
-        } else if (Array.isArray(question.correct_answer)) {
-          if (question.correct_answer.includes(answer)) correct++;
-        } else if (typeof question.correct_answer === 'object') {
-          if (question.correct_answer[answer] === true) correct++;
-        }
-      });
-      
-      // Store the test results in localStorage as a backup
-      const testResults = {
-        user_id: user.id,
-        exam_test_id: testId,
-        score: correct,
-        total_questions: questions.length,
-        total_questions_answered: attempted,
-        timestamp: new Date().toISOString()
-      };
-      
-      localStorage.setItem('pendingTestResults', JSON.stringify(testResults));
-      
-      // STEP 1: Mark all in-progress tests as abandoned
-      const { error: updateError } = await supabase
-        .from('user_tests')
-        .update({ status: 'abandoned' })
-        .eq('user_id', user.id)
-        .eq('exam_test_id', testId)
-        .eq('status', 'in_progress');
-        
-      if (updateError) {
-        console.error("Error abandoning in-progress tests:", updateError);
-        // Continue anyway - we'll try to create a new test
-      }
-      
-      // STEP 2: Wait to ensure the update completes
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // STEP 3: Create a completed test with a string ID
-      const stringId = `manual-${Date.now()}`;
-      const now = new Date();
-      const startTime = new Date(now.getTime() - (testData?.duration || 30) * 60 * 1000);
-      
-      const { data: newTest, error: insertError } = await supabase
-        .from('user_tests')
-        .insert({
-          id: stringId,
-          user_id: user.id,
-          exam_test_id: testId,
-          status: 'completed',
-          score: correct,
-          total_questions: questions.length,
-          total_questions_answered: attempted,
-          start_time: startTime.toISOString(),
-          end_time: now.toISOString(),
-          time_taken: testData?.duration ? testData.duration * 60 - timeRemaining : 1800
-        });
-      
-      if (insertError) {
-        console.error("Error creating completed test:", insertError);
-        
-        // If there's an error, navigate to a recovery page
-        setLoading(false);
-        navigate(`/test-result-recovery/${testId}`);
-        return;
-      }
-      
-      console.log("Successfully created completed test with ID:", stringId);
-      
-      // Remove the backup from localStorage
-      localStorage.removeItem('pendingTestResults');
-      
-      setLoading(false);
-      navigate(`/test-result/${testId}?user_test_id=${stringId}`);
-    } catch (error) {
-      console.error("Fatal error in handleFinishTest:", error);
-      setLoading(false);
-      
-      // Navigate to recovery page using localStorage data
-      navigate(`/test-result-recovery/${testId}`);
     }
   };
 
@@ -790,7 +687,6 @@ const TestScreen = () => {
       console.error("Error in handleAbandonSession:", error);
       setLoading(false);
       alert("We encountered an issue starting a new test. Please refresh the page and try again.");
->>>>>>> 768f45e5b78e8b478bbf3c495fac57468ebdd7dc
     }
   };
 
@@ -913,8 +809,6 @@ const TestScreen = () => {
           </div>
         </>
       )}
-<<<<<<< HEAD
-=======
       
       {/* Finish confirmation modal */}
       {showFinishModal && (
@@ -951,7 +845,7 @@ const TestScreen = () => {
             <p style={typography.textMdRegular}>
               You have an in-progress test that was started {existingSession.minutesAgo} {existingSession.minutesAgo === 1 ? 'minute' : 'minutes'} ago.
             </p>
-            <p style={typography.textSmRegular} style={{marginTop: '8px', color: colors.textSecondary}}>
+            <p style={{...typography.textSmRegular, marginTop: '8px', color: colors.textSecondary}}>
               You can continue where you left off or start a new attempt.
             </p>
             <div style={styles.modalButtons}>
@@ -1064,7 +958,6 @@ const TestScreen = () => {
           </div>
         </div>
       )}
->>>>>>> 768f45e5b78e8b478bbf3c495fac57468ebdd7dc
     </div>
   );
 };

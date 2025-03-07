@@ -14,7 +14,7 @@ function TestResults() {
 
   useEffect(() => {
     fetchResults();
-  }, [resultId]);
+  }, [fetchResults]);
 
   const fetchResults = async () => {
     try {
