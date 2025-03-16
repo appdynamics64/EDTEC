@@ -1,55 +1,259 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
-import colors from '../styles/foundation/colors';
-import typography from '../styles/foundation/typography';
+import useAuth from '../hooks/useAuth';
+import LoadingScreen from '../components/LoadingScreen';
 
 const TestDetails = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { testId } = useParams();
+  const { user } = useAuth();
   const [testData, setTestData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeRemaining, setTimeRemaining] = useState(null);
-  const [questions, setQuestions] = useState([]);
-  const [showFinishPopup, setShowFinishPopup] = useState(false);
-  const [existingTest, setExistingTest] = useState(null);
-  const [showExistingTestModal, setShowExistingTestModal] = useState(false);
-
-  // Keep track of user answers
-  const [userAnswers, setUserAnswers] = useState({});
-  
-  // Add this to your state variables at the top
+  const [lastAttempt, setLastAttempt] = useState(null);
+  const [attemptStats, setAttemptStats] = useState(null);
   const [submissionError, setSubmissionError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Function to open the finish confirmation popup
-  const openFinishPopup = () => {
-    setShowFinishPopup(true);
-  };
-
-  // Function to close the finish confirmation popup
-  const closeFinishPopup = () => {
-    setShowFinishPopup(false);
-  };
+  const [showFinishPopup, setShowFinishPopup] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(0);
 
   useEffect(() => {
-    console.log("TestDetails component mounted with testId:", testId);
-    fetchTestDetails();
-    checkExistingTest();
-    fetchQuestions();
-  }, [testId]);
+    const fetchTestDetails = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-  useEffect(() => {
-    if (testData && testData.duration_minutes) {
-      // Convert duration from minutes to seconds
-      setTimeRemaining(testData.duration_minutes * 60);
+        // First fetch test details with exam_id
+        const { data: test, error: testError } = await supabase
+          .from('tests')
+          .select(`
+            id,
+            test_name,
+            test_duration,
+            number_of_questions,
+            type,
+            exam_id
+          `)
+          .eq('id', testId)
+          .single();
+
+        if (testError) throw testError;
+
+        // Then fetch scoring rules for this exam
+        const { data: scoringRule, error: scoringError } = await supabase
+          .from('scoring_rules')
+          .select('marks_correct, marks_incorrect, marks_unanswered')
+          .eq('exam_id', test.exam_id)
+          .single();
+
+        if (scoringError) throw scoringError;
+
+        // Fetch test questions to get the actual total
+        const { data: testQuestions, error: questionsError } = await supabase
+          .from('test_questions')
+          .select('question_id')
+          .eq('test_id', testId);
+
+        if (questionsError) throw questionsError;
+
+        const totalQuestions = testQuestions?.length || test.number_of_questions;
+
+        // Updated query with proper join to question_options
+        const { data: attempts, error: attemptsError } = await supabase
+          .from('test_attempts')
+          .select(`
+            id,
+            start_time,
+            end_time,
+            final_score,
+            created_at,
+            test_attempt_answers (
+              id,
+              question_id,
+              selected_option_id,
+              selected_option:question_options!selected_option_id (
+                id,
+                is_correct
+              )
+            )
+          `)
+          .eq('test_id', testId)
+          .eq('user_id', user.id)
+          .not('end_time', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        console.log('Raw attempt data:', attempts?.[0]); // Debug log
+
+        if (attemptsError) throw attemptsError;
+
+        setTestData({ ...test, scoringRule });
+        
+        if (!attempts || attempts.length === 0) {
+          setLastAttempt(null);
+          setAttemptStats(null);
+          return;
+        }
+
+        const lastAttempt = attempts[0];
+        setLastAttempt(lastAttempt);
+
+        // Get unique attempted questions (to avoid counting duplicates)
+        const uniqueAttemptedQuestions = new Set(
+          lastAttempt.test_attempt_answers.map(answer => answer.question_id)
+        );
+        const attemptedQuestions = uniqueAttemptedQuestions.size;
+
+        // Validate attempted questions count
+        if (attemptedQuestions > totalQuestions) {
+          console.error('Invalid attempt count detected:', {
+            attempted: attemptedQuestions,
+            total: totalQuestions
+          });
+          // Use the total questions as the maximum possible attempts
+          attemptedQuestions = totalQuestions;
+        }
+        
+        // Check if selected option is correct
+        const correctAnswers = lastAttempt.test_attempt_answers.filter(answer => 
+          answer.selected_option && answer.selected_option.is_correct === true
+        ).length;
+
+        console.log('Answer statistics:', { // Debug log
+          totalQuestions,
+          uniqueAttempted: attemptedQuestions,
+          rawAttempted: lastAttempt.test_attempt_answers.length,
+          correct: correctAnswers,
+          answers: lastAttempt.test_attempt_answers.map(answer => ({
+            questionId: answer.question_id,
+            selectedOptionId: answer.selected_option_id,
+            isCorrect: answer.selected_option?.is_correct
+          }))
+        });
+
+        const wrongAnswers = attemptedQuestions - correctAnswers;
+        const unansweredQuestions = totalQuestions - attemptedQuestions;
+        
+        // Calculate marks based on scoring rules
+        const correctMarks = correctAnswers * scoringRule.marks_correct;
+        const negativeMarks = wrongAnswers * scoringRule.marks_incorrect;
+        const unansweredMarks = unansweredQuestions * scoringRule.marks_unanswered;
+        
+        // Calculate total and maximum possible marks
+        const totalMarks = correctMarks + negativeMarks + unansweredMarks;
+        const maxPossibleMarks = totalQuestions * scoringRule.marks_correct;
+
+        setAttemptStats({
+          totalQuestions,
+          attemptedQuestions,
+          correctAnswers,
+          wrongAnswers,
+          unansweredQuestions,
+          totalMarks: Math.round(totalMarks * 100) / 100,
+          maxPossibleMarks,
+          correctMarks,
+          negativeMarks: Math.abs(negativeMarks),
+          actualNegativeMarks: negativeMarks,
+          unansweredMarks
+        });
+
+      } catch (error) {
+        console.error('Error fetching test details:', error);
+        setError(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) {
+      fetchTestDetails();
+    }
+
+    return () => {
+      setLastAttempt(null);
+      setAttemptStats(null);
+      setTestData(null);
+    };
+  }, [testId, user, location.key]);
+
+  const handleStartTest = () => {
+    navigate(`/test/${testId}/take`);
+  };
+
+  const handleViewSolutions = () => {
+    navigate(`/test/${testId}/solutions/${lastAttempt.id}`);
+  };
+
+  const handleFinishTest = async () => {
+    try {
+      setSubmissionError(null);
+      setIsSubmitting(true);
+      setShowFinishPopup(false);
       
+      if (!user) {
+        setSubmissionError("User not authenticated. Please log in again.");
+        return;
+      }
+      
+      // Calculate attempted questions
+      const attemptedQuestions = Object.keys(userAnswers).length;
+      
+      // First update the test status to completed
+      const { error: updateError } = await supabase
+        .from('test_attempts')
+        .update({
+          status: 'completed',
+          end_time: new Date().toISOString()
+        })
+        .eq('test_id', testId)
+        .eq('user_id', user.id)
+        .eq('status', 'in_progress');
+        
+      if (updateError) {
+        console.error('Error updating test status:', updateError);
+        setSubmissionError(`Failed to update test status: ${updateError.message}`);
+        return;
+      }
+      
+      // Then insert the final test record
+      const { error: insertError } = await supabase
+        .from('user_tests')
+        .insert({
+          user_id: user.id,
+          test_id: testId,
+          status: 'completed',
+          score: 0, // This will be calculated later
+          end_time: new Date().toISOString(),
+          total_questions_answered: attemptedQuestions
+        });
+        
+      if (insertError) {
+        console.error('Error creating user test:', insertError);
+        setSubmissionError(`Database error: ${insertError.message}`);
+        return;
+      }
+      
+      console.log('Test completed successfully, navigating to results...');
+      navigate(`/test-result/${testId}`, { replace: true });
+      
+    } catch (error) {
+      console.error('Error finishing test:', error);
+      setSubmissionError(`Error: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Timer effect that also handles test completion
+  useEffect(() => {
+    if (testData && testData.test_duration) {
       const timer = setInterval(() => {
         setTimeRemaining(prev => {
           if (prev <= 1) {
             clearInterval(timer);
-            handleFinishTest();
+            handleFinishTest(); // This will update the status and navigate
             return 0;
           }
           return prev - 1;
@@ -60,412 +264,107 @@ const TestDetails = () => {
     }
   }, [testData]);
 
-  const fetchTestDetails = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('tests')
-        .select('*')
-        .eq('id', testId)
-        .single();
-        
-      if (error) throw error;
-      console.log("Test details:", data);
-      setTestData(data);
-    } catch (error) {
-      console.error('Error fetching test details:', error);
-      setError('Failed to load test details');
-    } finally {
-      // Only set loading to false if fetchQuestions has also completed
-      if (questions.length > 0 || error) {
-        setLoading(false);
-      }
-    }
-  };
-
-  const fetchQuestions = async () => {
-    try {
-      const { data: testQuestions, error: testQuestionsError } = await supabase
-        .from('test_questions')
-        .select('question_id, question_order')
-        .eq('test_id', testId);
-
-      if (testQuestionsError) throw testQuestionsError;
-
-      if (!testQuestions || testQuestions.length === 0) {
-        setQuestions([]);
-        setLoading(false);
-        return;
-      }
-
-      const { data: questionDetails, error: questionsError } = await supabase
-        .from('questions')
-        .select('*')
-        .in('id', testQuestions.map(q => q.question_id));
-
-      if (questionsError) throw questionsError;
-
-      setQuestions(questionDetails || []);
-    } catch (error) {
-      console.error('Error fetching questions:', error);
-      setError('Failed to load test questions');
-    } finally {
-      // Always set loading to false when this function completes
-      setLoading(false);
-    }
-  };
-
-  const checkExistingTest = async () => {
-    try {
-      // Get the current user
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        console.error("User not authenticated");
-        return;
-      }
-      
-      // Check for existing in-progress test
-      const { data, error } = await supabase
-        .from('user_tests')
-        .select('id, status, created_at, start_time')
-        .eq('test_id', testId)
-        .eq('user_id', user.id)
-        .eq('status', 'in_progress')
-        .order('created_at', { ascending: false })
-        .limit(1);
-        
-      if (error) {
-        console.error("Error checking existing test:", error);
-        return;
-      }
-      
-      if (data && data.length > 0) {
-        console.log("Found existing in-progress test:", data[0]);
-        setExistingTest(data[0]);
-        
-        // Calculate how long ago the test was started
-        const startTime = new Date(data[0].start_time || data[0].created_at);
-        const minutesAgo = Math.round((Date.now() - startTime.getTime()) / (1000 * 60));
-        
-        // If test was started recently, show modal
-        if (minutesAgo < 120) {
-          setShowExistingTestModal(true);
-        } else {
-          // If the test is older than 2 hours, mark it as abandoned
-          console.log("Test is older than 2 hours, marking as abandoned");
-          
-          await supabase
-            .from('user_tests')
-            .update({ status: 'abandoned' })
-            .eq('id', data[0].id);
-            
-          setExistingTest(null);
-        }
-      }
-    } catch (error) {
-      console.error("Error checking existing test:", error);
-    }
-  };
-
-  const handleStartTest = async () => {
-    try {
-      // If there's an existing test and the modal is not shown, show it
-      if (existingTest && !showExistingTestModal) {
-        setShowExistingTestModal(true);
-        return;
-      }
-      
-      // If no existing test, navigate to the test screen
-      navigate(`/test/${testId}/questions`);
-    } catch (error) {
-      console.error("Error starting test:", error);
-      alert("We encountered an issue starting the test. Please try again.");
-    }
-  };
-
-  const handleContinueTest = () => {
-    setShowExistingTestModal(false);
-    navigate(`/test/${testId}/questions`);
-  };
-
-  const handleAbandonTest = async () => {
-    try {
-      if (!existingTest) return;
-      
-      // Mark the existing test as abandoned
-      await supabase
-        .from('user_tests')
-        .update({ status: 'abandoned' })
-        .eq('id', existingTest.id);
-        
-      setExistingTest(null);
-      setShowExistingTestModal(false);
-      
-      // Start a new test
-      navigate(`/test/${testId}/questions`);
-    } catch (error) {
-      console.error("Error abandoning test:", error);
-      alert("We encountered an issue. Please try again.");
-    }
-  };
-
-  const handleViewSolutions = () => {
-    navigate(`/test/${testId}/solutions`);
-  };
-
-  const handleRedoTest = () => {
-    handleStartTest(); // Reuse the start test logic
-  };
-
-  const handleBack = () => {
-    navigate(-1);
-  };
-
-  const handleFinishTest = async () => {
-    try {
-      // Reset error state
-      setSubmissionError(null);
-      // Set submitting state to show a loading indicator
-      setIsSubmitting(true);
-      // Close the popup
-      setShowFinishPopup(false);
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        setSubmissionError("User not authenticated. Please log in again.");
-        return;
-      }
-      
-      // Calculate attempted questions and correct answers
-      const attemptedQuestions = Object.keys(userAnswers).length;
-      
-      // Show what we're trying to insert
-      console.log('Attempting to insert user test:', {
-        user_id: user.id,
-        test_id: testId,
-        status: 'completed',
-        score: 0,
-        end_time: new Date(),
-        total_questions_answered: attemptedQuestions
-      });
-      
-      // Step 1: Just insert without trying to return the record
-      const { error: insertError } = await supabase
-        .from('user_tests')
-        .insert({
-          user_id: user.id,
-          test_id: testId,
-          status: 'completed',
-          score: 0,
-          end_time: new Date(),
-          total_questions_answered: attemptedQuestions
-        });
-        
-      if (insertError) {
-        console.error('Error creating user test:', insertError);
-        setSubmissionError(`Database error: ${insertError.message}`);
-        throw insertError;
-      }
-      
-      console.log('Test record inserted successfully, navigating to results...');
-      console.log('Target URL:', `/test-result/${testId}`);
-      
-      // Try navigation with a timeout to see if it's a timing issue
-      setTimeout(() => {
-        try {
-          navigate(`/test-result/${testId}`, { replace: true });
-          console.log('Navigation called');
-        } catch (navError) {
-          console.error('Navigation error:', navError);
-          setSubmissionError(`Navigation error: ${navError.message}`);
-        }
-      }, 100);
-      
-    } catch (error) {
-      console.error('Error finishing test:', error);
-      setSubmissionError(`Error: ${error.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Render the finish confirmation popup
-  const renderFinishPopup = () => {
-    if (!showFinishPopup) return null;
-    
-    return (
-      <div style={styles.popupOverlay}>
-        <div style={styles.popup}>
-          <h3 style={typography.textLgBold}>Finish Test?</h3>
-          <p style={typography.textMdRegular}>
-            Are you sure you want to finish this test? You cannot resume once submitted.
-          </p>
-          <div style={styles.popupButtons}>
-            <button 
-              onClick={closeFinishPopup}
-              style={styles.cancelButton}
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={handleFinishTest}
-              style={styles.confirmButton}
-            >
-              Yes, Finish
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  if (loading) {
-    return <div style={styles.container}>Loading test details...</div>;
-  }
-
-  if (error) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.errorContainer}>
-          <h2 style={typography.displaySmBold}>Error</h2>
-          <p style={typography.textMdRegular}>{error}</p>
-          <button onClick={handleBack} style={styles.backButton}>
-            Go Back
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!testData) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.errorContainer}>
-          <h2 style={typography.displaySmBold}>Test Not Found</h2>
-          <p style={typography.textMdRegular}>
-            We couldn't find the test you're looking for.
-          </p>
-          <button onClick={handleBack} style={styles.backButton}>
-            Go Back
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const lastAttempt = testData.user_tests?.[0];
-  const isCompleted = lastAttempt?.status === 'completed';
+  if (loading) return <LoadingScreen />;
+  if (error) return <div style={styles.error}>{error}</div>;
+  if (!testData) return <div style={styles.error}>Test not found</div>;
 
   return (
     <div style={styles.container}>
-      {submissionError && (
-        <div style={styles.errorMessage}>
-          <p style={typography.textMdBold}>Error Submitting Test</p>
-          <p style={typography.textMdRegular}>{submissionError}</p>
-          <button 
-            onClick={() => setSubmissionError(null)} 
-            style={styles.dismissButton}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-      
-      {isSubmitting && (
-        <div style={styles.loadingOverlay}>
-          <div style={styles.loadingMessage}>
-            Submitting test...
-          </div>
-        </div>
-      )}
-      
-      <button onClick={handleBack} style={styles.backButton}>
-        ←
+      <button onClick={() => navigate('/dashboard')} style={styles.backButton}>
+        ← Back to Dashboard
       </button>
 
-      <div style={styles.card}>
-        <div style={styles.iconContainer}>
-          {testData.type === 'recommended' && <span>👤</span>}
-          {testData.type === 'random' && <span>🎲</span>}
-          {testData.type === 'custom' && <span>✏️</span>}
+      <div style={styles.content}>
+        <div style={styles.header}>
+          <span style={styles.type}>
+            {testData.type === 'recommended' ? 'Recommended Test' : 'Custom Test'}
+          </span>
+          <h1 style={styles.title}>{testData.test_name}</h1>
         </div>
 
-        <h1 style={typography.displayMdBold}>{testData.title}</h1>
-
-        <div style={styles.detailsContainer}>
-          <h2 style={typography.displayLgBold}>
-            {testData.question_count} Questions
-          </h2>
-          <p style={typography.textLgRegular}>{testData.duration_minutes} minutes</p>
-        </div>
-
-        <div style={styles.bottomIconContainer}>
-          <span style={styles.waveIcon}>👋</span>
-        </div>
-
-        {!isCompleted ? (
-          <button 
-            onClick={handleStartTest}
-            style={styles.startButton}
-          >
-            <span style={styles.buttonIcon}>📝</span>
-            Start test
-          </button>
-        ) : (
-          <div style={styles.completedActions}>
-            <div style={styles.scoreContainer}>
-              <span style={typography.textLgBold}>Your Score</span>
-              <span style={typography.displaySmBold}>
-                {lastAttempt.score}/{testData.question_count}
+        <div style={styles.details}>
+          <div style={styles.infoItem}>
+            <span>Total Questions:</span>
+            <span>{testData?.number_of_questions}</span>
+          </div>
+          <div style={styles.infoItem}>
+            <span>Duration:</span>
+            <span>{testData?.test_duration} minutes</span>
+          </div>
+          {testData?.scoringRule && (
+            <div style={styles.infoItem}>
+              <span>Marking Scheme:</span>
+              <span>
+                +{testData.scoringRule.marks_correct} / 
+                -{Math.abs(testData.scoringRule.marks_incorrect)} / 
+                {testData.scoringRule.marks_unanswered}
               </span>
             </div>
-            <button 
-              onClick={handleViewSolutions}
-              style={styles.solutionsButton}
-            >
-              View solutions
-            </button>
-            <button 
-              onClick={handleRedoTest}
-              style={styles.redoButton}
-            >
-              Redo test
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
-      {/* Render the finish popup */}
-      {renderFinishPopup()}
+        {lastAttempt && attemptStats && (
+          <div style={styles.history}>
+            <h3 style={styles.historyTitle}>Previous Attempt Statistics</h3>
+            
+            <div style={styles.statsGrid}>
+              <div style={styles.statItem}>
+                <span style={styles.statLabel}>Total Questions</span>
+                <span style={styles.statValue}>{attemptStats.totalQuestions}</span>
+              </div>
+              
+              <div style={styles.statItem}>
+                <span style={styles.statLabel}>Attempted</span>
+                <span style={styles.statValue}>{attemptStats.attemptedQuestions}</span>
+              </div>
+              
+              <div style={styles.statItem}>
+                <span style={styles.statLabel}>Correct</span>
+                <span style={styles.statValue}>
+                  <span style={styles.correctAnswer}>
+                    {attemptStats.correctAnswers} (+{attemptStats.correctMarks})
+                  </span>
+                </span>
+              </div>
+              
+              <div style={styles.statItem}>
+                <span style={styles.statLabel}>Wrong</span>
+                <span style={styles.statValue}>
+                  <span style={styles.wrongAnswer}>
+                    {attemptStats.wrongAnswers} (-{attemptStats.negativeMarks})
+                  </span>
+                </span>
+              </div>
+              
+              <div style={styles.statItem}>
+                <span style={styles.statLabel}>Unanswered</span>
+                <span style={styles.statValue}>
+                  {attemptStats.unansweredQuestions} ({attemptStats.unansweredMarks})
+                </span>
+              </div>
+              
+              <div style={styles.statItem}>
+                <span style={styles.statLabel}>Final Score</span>
+                <span style={styles.statValue}>
+                  <span style={styles.scoreValue}>
+                    {attemptStats.totalMarks < 0 ? '-' : ''}{Math.abs(attemptStats.totalMarks)}/{attemptStats.maxPossibleMarks}
+                  </span>
+                </span>
+              </div>
+            </div>
 
-      {/* Modal for existing test */}
-      {showExistingTestModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
-            <h2 style={typography.textLgBold}>Continue Existing Test?</h2>
-            <p style={typography.textMdRegular}>
-              You have an in-progress test that was started{' '}
-              {Math.round((Date.now() - new Date(existingTest.start_time || existingTest.created_at).getTime()) / (1000 * 60))}{' '}
-              minutes ago. Would you like to continue where you left off?
-            </p>
-            <div style={styles.modalButtons}>
-              <button 
-                style={styles.secondaryButton}
-                onClick={handleAbandonTest}
-              >
-                Start New Test
-              </button>
-              <button 
-                style={styles.primaryButton}
-                onClick={handleContinueTest}
-              >
-                Continue Test
+            <div style={styles.actions}>
+              <button onClick={handleViewSolutions} style={styles.secondaryButton}>
+                View Solutions
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        <button onClick={handleStartTest} style={styles.startButton}>
+          {lastAttempt ? 'Retake Test' : 'Start Test'}
+        </button>
+      </div>
     </div>
   );
 };
@@ -473,238 +372,145 @@ const TestDetails = () => {
 const styles = {
   container: {
     padding: '20px',
-    minHeight: '100vh',
-    backgroundColor: colors.backgroundSecondary,
-  },
-  errorContainer: {
-    backgroundColor: colors.backgroundPrimary,
-    borderRadius: '12px',
-    padding: '24px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '16px',
-    textAlign: 'center',
-    maxWidth: '500px',
+    maxWidth: '800px',
     margin: '0 auto',
-    marginTop: '40px',
   },
   backButton: {
-    background: 'none',
+    padding: '8px 16px',
     border: 'none',
-    fontSize: '24px',
+    backgroundColor: 'transparent',
     cursor: 'pointer',
+    fontSize: '16px',
+    color: '#007bff',
     marginBottom: '20px',
   },
-  card: {
-    backgroundColor: colors.brandPrimary,
-    borderRadius: '24px',
-    padding: '32px',
-    position: 'relative',
-    overflow: 'hidden',
-    color: colors.backgroundPrimary,
+  content: {
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    padding: '24px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
-  iconContainer: {
-    fontSize: '32px',
-    marginBottom: '16px',
+  header: {
+    marginBottom: '24px',
   },
-  detailsContainer: {
-    marginTop: '32px',
-    marginBottom: '48px',
+  type: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    backgroundColor: '#e5e7eb',
+    borderRadius: '16px',
+    fontSize: '14px',
+    marginBottom: '12px',
+    textTransform: 'capitalize',
   },
-  bottomIconContainer: {
-    position: 'absolute',
-    bottom: '32px',
-    right: '32px',
+  title: {
+    fontSize: '28px',
+    fontWeight: '600',
+    margin: '0',
+    color: '#111827',
   },
-  waveIcon: {
-    fontSize: '32px',
+  details: {
+    marginBottom: '24px',
+    backgroundColor: '#f9fafb',
+    borderRadius: '8px',
+    padding: '16px',
+  },
+  infoItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '12px 0',
+    borderBottom: '1px solid #e5e7eb',
+    '&:last-child': {
+      borderBottom: 'none',
+    },
+  },
+  history: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: '8px',
+    padding: '24px',
+    marginBottom: '24px',
+  },
+  historyTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    marginBottom: '20px',
+    color: '#2d3748',
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '16px',
+    marginBottom: '24px',
+  },
+  statItem: {
+    backgroundColor: 'white',
+    padding: '16px',
+    borderRadius: '8px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  statLabel: {
+    fontSize: '14px',
+    color: '#4a5568',
+    fontWeight: '500',
+  },
+  statValue: {
+    fontSize: '24px',
+    fontWeight: '600',
+    color: '#2d3748',
+  },
+  correctAnswer: {
+    color: '#38a169',
+  },
+  wrongAnswer: {
+    color: '#e53e3e',
+  },
+  scoreValue: {
+    color: '#3182ce',
+    fontSize: '1.25rem',
+    fontWeight: 'bold'
+  },
+  actions: {
+    display: 'flex',
+    gap: '12px',
   },
   startButton: {
     width: '100%',
-    padding: '16px',
-    backgroundColor: colors.backgroundPrimary,
-    color: colors.brandPrimary,
-    border: 'none',
-    borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    cursor: 'pointer',
-    ...typography.textLgBold,
-  },
-  buttonIcon: {
-    fontSize: '20px',
-  },
-  completedActions: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  scoreContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    padding: '16px',
-    borderRadius: '12px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  solutionsButton: {
-    width: '100%',
-    padding: '16px',
-    backgroundColor: colors.backgroundPrimary,
-    color: colors.brandPrimary,
-    border: 'none',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    ...typography.textLgBold,
-  },
-  redoButton: {
-    width: '100%',
-    padding: '16px',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    color: colors.backgroundPrimary,
-    border: 'none',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    ...typography.textLgBold,
-  },
-  popupOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  popup: {
-    backgroundColor: colors.backgroundSecondary,
-    borderRadius: '12px',
-    padding: '24px',
-    width: '90%',
-    maxWidth: '400px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  popupButtons: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px',
-    marginTop: '8px',
-  },
-  cancelButton: {
-    padding: '10px 16px',
-    borderRadius: '8px',
-    backgroundColor: 'transparent',
-    color: colors.textPrimary,
-    border: `1px solid ${colors.borderPrimary}`,
-    cursor: 'pointer',
-    ...typography.textMdMedium,
-  },
-  confirmButton: {
-    padding: '10px 16px',
-    borderRadius: '8px',
-    backgroundColor: colors.brandPrimary,
-    color: colors.backgroundPrimary,
-    border: 'none',
-    cursor: 'pointer',
-    ...typography.textMdMedium,
-  },
-  errorMessage: {
-    position: 'fixed',
-    top: '20px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    backgroundColor: colors.accentError || 'red',
+    padding: '14px',
+    backgroundColor: '#007bff',
     color: 'white',
-    padding: '16px',
-    borderRadius: '8px',
-    zIndex: 2000,
-    width: '90%',
-    maxWidth: '500px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-  },
-  dismissButton: {
-    alignSelf: 'flex-end',
-    padding: '8px 16px',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    border: 'none',
-    borderRadius: '4px',
-    color: 'white',
-    cursor: 'pointer',
-    marginTop: '8px',
-  },
-  loadingOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1500,
-  },
-  loadingMessage: {
-    backgroundColor: colors.backgroundSecondary,
-    padding: '20px 30px',
-    borderRadius: '8px',
-    ...typography.textLgMedium,
-    color: colors.textPrimary,
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  modal: {
-    backgroundColor: colors.backgroundPrimary,
-    borderRadius: '12px',
-    padding: '24px',
-    maxWidth: '500px',
-    width: '90%',
-  },
-  modalButtons: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px',
-    marginTop: '24px',
-  },
-  primaryButton: {
-    backgroundColor: colors.brandPrimary,
-    color: colors.backgroundPrimary,
     border: 'none',
     borderRadius: '8px',
-    padding: '8px 16px',
-    ...typography.textSmBold,
+    fontSize: '16px',
+    fontWeight: '600',
     cursor: 'pointer',
+    transition: 'background-color 0.2s',
+    '&:hover': {
+      backgroundColor: '#0056b3',
+    },
   },
   secondaryButton: {
-    backgroundColor: colors.backgroundSecondary,
-    color: colors.textPrimary,
-    border: 'none',
-    borderRadius: '8px',
     padding: '8px 16px',
-    ...typography.textSmBold,
+    backgroundColor: 'white',
+    border: '1px solid #007bff',
+    color: '#007bff',
+    borderRadius: '6px',
     cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '500',
+    transition: 'all 0.2s',
+    '&:hover': {
+      backgroundColor: '#f8f9fa',
+    },
+  },
+  errorMessage: {
+    textAlign: 'center',
+    padding: '24px',
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
 };
 
-export default TestDetails; 
+export default TestDetails;

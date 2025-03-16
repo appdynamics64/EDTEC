@@ -4,7 +4,6 @@ import { supabase } from '../config/supabaseClient';
 import useAuth from '../hooks/useAuth';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
-import { fetchAvailableExams, updateUserExam, skipExamSelection } from '../services/ExamService';
 
 const ExamSelectionOnboarding = () => {
   const navigate = useNavigate();
@@ -12,101 +11,92 @@ const ExamSelectionOnboarding = () => {
   const [loading, setLoading] = useState(true);
   const [exams, setExams] = useState([]);
   const [selectedExam, setSelectedExam] = useState(null);
+  const [userName, setUserName] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetchCurrentExams();
-  }, []);
-
-  const fetchCurrentExams = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const currentDate = new Date().toISOString();
+      setError(null);
 
-      const { data, error } = await supabase
+      // Fetch profile data
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('name, selected_exam_id')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') {
+        throw profileError;
+      }
+
+      // Fetch exams
+      const { data: examsData, error: examsError } = await supabase
         .from('exams')
-        .select(`
-          *,
-          category:category_id (
-            name,
-            category_description
-          ),
-          tests (
-            count
-          )
-        `)
-        .gte('end_date', currentDate)
-        .order('start_date', { ascending: true });
+        .select('id, exam_name');
 
-      if (error) throw error;
-      setExams(data);
+      if (examsError) {
+        throw examsError;
+      }
+
+      if (!examsData || examsData.length === 0) {
+        setError('No exams available');
+        return;
+      }
+
+      setExams(examsData);
+
+      // Pre-fill existing data if any
+      if (profile?.name) setUserName(profile.name);
+      if (profile?.selected_exam_id) setSelectedExam(profile.selected_exam_id);
+
     } catch (error) {
-      console.error('Error fetching exams:', error);
-      setError(error.message);
+      console.error('Error fetching data:', error);
+      setError('Failed to load data. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    fetchData();
+  }, [user]);
+
   const handleExamSelect = (examId) => {
     setSelectedExam(examId);
+    setError(null);
   };
 
   const handleSubmit = async () => {
-    if (!selectedExam) {
-      const confirmed = window.confirm('Are you sure you want to continue without selecting an exam?');
-      if (!confirmed) {
-        return;
-      }
+    if (!userName.trim() || !selectedExam) {
+      setError('Please enter your name and select an exam');
+      return;
     }
-    
-    try {
-      setSubmitting(true);
-      
-      if (selectedExam) {
-        // Update user profile with selected exam
-        const { error: updateError } = await updateUserExam(user.id, selectedExam, true);
-        
-        if (updateError) {
-          console.error('Error updating user exam:', updateError);
-          setError('Failed to save your exam selection. Please try again.');
-          throw updateError;
-        }
-      } else {
-        // Just mark onboarding as completed without setting preferred exam
-        const { error: skipError } = await skipExamSelection(user.id);
-        
-        if (skipError) {
-          console.error('Error skipping exam selection:', skipError);
-          setError('Failed to skip exam selection. Please try again.');
-          throw skipError;
-        }
-      }
-      
-      // Redirect to dashboard
-      navigate('/dashboard');
-    } catch (error) {
-      // Error is already handled above
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
-  const handleSkip = async () => {
     try {
       setSubmitting(true);
+      setError(null);
+
+      // Update profile
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          name: userName.trim(),
+          selected_exam_id: selectedExam,
+          updated_at: new Date().toISOString()
+        });
+
+      if (updateError) throw updateError;
+
+      // Force a reload instead of using navigate
+      // This ensures OnboardingGuard gets fresh data
+      window.location.href = '/dashboard';
       
-      // Mark onboarding as completed without setting preferred exam
-      const { error: skipError } = await skipExamSelection(user.id);
-      
-      if (skipError) throw skipError;
-      
-      // Redirect to dashboard
-      navigate('/dashboard');
     } catch (error) {
-      console.error('Error skipping exam selection:', error);
-      setError('Failed to skip. Please try again.');
+      console.error('Error saving:', error);
+      setError('Failed to save your information. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -121,96 +111,74 @@ const ExamSelectionOnboarding = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div style={styles.errorContainer}>
-        <h2>Error Loading Exams</h2>
-        <p>{error}</p>
-        <button onClick={fetchCurrentExams}>Retry</button>
-      </div>
-    );
-  }
-
   return (
     <div style={styles.container}>
-      <div style={styles.content}>
-        <h1 style={styles.title}>Select Your Exam</h1>
-        <p style={styles.description}>
-          Choose the exam you're preparing for to get personalized test recommendations and study plans.
-        </p>
-        
-        {error && (
-          <div style={styles.errorAlert}>
-            {error}
-          </div>
-        )}
-        
-        <div style={styles.examGrid}>
-          {exams.length === 0 ? (
-            <div style={styles.noExams}>
-              <h2>No Current Exams</h2>
-              <p>Check back later for upcoming exams</p>
-            </div>
-          ) : (
-            exams.map(exam => (
-              <div
-                key={exam.id}
-                style={{
-                  ...styles.examCard,
-                  ...(selectedExam === exam.id ? styles.selectedExamCard : {})
-                }}
-                onClick={() => handleExamSelect(exam.id)}
-              >
-                <div style={styles.examStatus}>
-                  {new Date(exam.start_date) > new Date() ? (
-                    <span style={styles.upcomingBadge}>Upcoming</span>
-                  ) : (
-                    <span style={styles.activeBadge}>Active</span>
-                  )}
-                </div>
+      <button 
+        onClick={async () => {
+          await supabase.auth.signOut();
+          navigate('/login', { replace: true });
+        }}
+        style={styles.logoutButton}
+      >
+        Logout
+      </button>
 
-                <h2 style={typography.textLgBold}>{exam.exam_name}</h2>
-                <p style={typography.textMdRegular}>{exam.exam_description}</p>
-                
-                <div style={styles.examInfo}>
-                  <div style={styles.infoItem}>
-                    <span>Category</span>
-                    <strong>{exam.category?.category_description}</strong>
-                  </div>
-                  <div style={styles.infoItem}>
-                    <span>Available Tests</span>
-                    <strong>{exam.tests?.[0]?.count || 0}</strong>
-                  </div>
-                  <div style={styles.infoItem}>
-                    <span>Start Date</span>
-                    <strong>{new Date(exam.start_date).toLocaleDateString()}</strong>
-                  </div>
-                  <div style={styles.infoItem}>
-                    <span>End Date</span>
-                    <strong>{new Date(exam.end_date).toLocaleDateString()}</strong>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+      <div style={styles.content}>
+        <h1 style={styles.title}>Welcome to ExamPrep</h1>
         
-        <div style={styles.actions}>
-          <button
-            style={styles.skipButton}
-            onClick={handleSkip}
-            disabled={submitting}
-          >
-            I'll Choose Later
-          </button>
-          <button
-            style={styles.continueButton}
-            onClick={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? 'Saving...' : 'Continue'}
-          </button>
-        </div>
+        {error ? (
+          <div style={styles.errorContainer}>
+            <h2>Error Loading Exams</h2>
+            <p>{error}</p>
+            <button 
+              onClick={fetchData}
+              style={styles.retryButton}
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <>
+            <div style={styles.nameSection}>
+              <label htmlFor="userName" style={styles.label}>Your Name</label>
+              <input
+                id="userName"
+                type="text"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                style={styles.input}
+                placeholder="Enter your name"
+              />
+            </div>
+
+            <h2 style={styles.subtitle}>Select Your Exam</h2>
+            
+            <div style={styles.examGrid}>
+              {exams.map(exam => (
+                <div
+                  key={exam.id}
+                  style={{
+                    ...styles.examCard,
+                    ...(selectedExam === exam.id && styles.selectedExamCard)
+                  }}
+                  onClick={() => handleExamSelect(exam.id)}
+                >
+                  <h2 style={typography.textLgBold}>{exam.exam_name}</h2>
+                </div>
+              ))}
+            </div>
+            
+            <div style={styles.actions}>
+              <button
+                style={styles.continueButton}
+                onClick={handleSubmit}
+                disabled={submitting || !userName.trim() || !selectedExam}
+              >
+                {submitting ? 'Saving...' : 'Continue'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -218,15 +186,13 @@ const ExamSelectionOnboarding = () => {
 
 const styles = {
   container: {
+    position: 'relative',  // Add this to position the logout button
     minHeight: '100vh',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
     padding: '20px',
-    backgroundColor: colors.backgroundSecondary,
+    backgroundColor: colors.backgroundPrimary,
   },
   content: {
-    backgroundColor: colors.backgroundPrimary,
+    backgroundColor: colors.backgroundSecondary,
     borderRadius: '12px',
     padding: '32px',
     maxWidth: '800px',
@@ -247,78 +213,30 @@ const styles = {
   },
   examGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
     gap: '16px',
     marginBottom: '32px',
+    padding: '20px 0',
   },
   examCard: {
     padding: '20px',
     borderRadius: '8px',
-    border: `1px solid ${colors.borderPrimary}`,
-    backgroundColor: colors.backgroundPrimary,
+    border: '2px solid #e5e7eb',
+    backgroundColor: 'white',
     cursor: 'pointer',
-    display: 'flex',
-    gap: '16px',
-    position: 'relative',
+    textAlign: 'center',
+    marginBottom: '10px',
     transition: 'all 0.2s ease',
-    '&:hover': {
-      borderColor: colors.brandPrimary,
-      transform: 'translateY(-2px)',
-      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)',
-    }
   },
   selectedExamCard: {
-    borderColor: colors.brandPrimary,
-    borderWidth: '2px',
-    backgroundColor: colors.brandPrimaryLight,
-  },
-  examStatus: {
-    position: 'absolute',
-    top: '16px',
-    right: '16px',
-  },
-  activeBadge: {
-    backgroundColor: colors.success,
-    color: 'white',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    fontSize: '12px',
-  },
-  upcomingBadge: {
-    backgroundColor: colors.warning,
-    color: 'white',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    fontSize: '12px',
-  },
-  examInfo: {
-    flex: 1,
-  },
-  infoItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
+    backgroundColor: '#f0f9ff',
+    borderColor: '#3b82f6',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
   actions: {
     display: 'flex',
     justifyContent: 'space-between',
     gap: '16px',
-  },
-  skipButton: {
-    padding: '12px 24px',
-    borderRadius: '8px',
-    backgroundColor: colors.backgroundSecondary,
-    color: colors.textPrimary,
-    border: 'none',
-    cursor: 'pointer',
-    ...typography.textMdMedium,
-    '&:hover': {
-      backgroundColor: colors.borderPrimary,
-    },
-    '&:disabled': {
-      opacity: 0.7,
-      cursor: 'not-allowed',
-    }
   },
   continueButton: {
     padding: '12px 24px',
@@ -354,19 +272,64 @@ const styles = {
   },
   errorContainer: {
     textAlign: 'center',
-    padding: '24px',
+    padding: '20px',
+    margin: '20px 0',
   },
-  errorAlert: {
-    backgroundColor: colors.errorLight,
-    color: colors.errorDark,
-    padding: '16px',
-    borderRadius: '8px',
-    marginBottom: '24px',
-    ...typography.textMdRegular,
+  retryButton: {
+    padding: '10px 20px',
+    backgroundColor: colors.brandPrimary,
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    marginTop: '10px',
+    '&:hover': {
+      backgroundColor: colors.brandPrimaryDark,
+    }
   },
   noExams: {
     textAlign: 'center',
     padding: '24px',
+  },
+  nameSection: {
+    marginBottom: '32px',
+  },
+  label: {
+    display: 'block',
+    marginBottom: '8px',
+    ...typography.textMdMedium,
+    color: colors.textPrimary,
+  },
+  input: {
+    width: '100%',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: `1px solid ${colors.borderPrimary}`,
+    fontSize: '16px',
+    '&:focus': {
+      outline: 'none',
+      borderColor: colors.brandPrimary,
+    },
+  },
+  subtitle: {
+    ...typography.textXlBold,
+    color: colors.textPrimary,
+    marginBottom: '16px',
+  },
+  logoutButton: {
+    position: 'absolute',
+    top: '20px',
+    right: '20px',
+    padding: '8px 16px',
+    backgroundColor: 'transparent',
+    color: colors.textPrimary,
+    border: `1px solid ${colors.borderPrimary}`,
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    '&:hover': {
+      backgroundColor: colors.backgroundSecondary,
+    }
   },
 };
 
