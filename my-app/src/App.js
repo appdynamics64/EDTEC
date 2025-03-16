@@ -1,147 +1,113 @@
-import React from 'react';
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './config/supabaseClient';
+import useAuth from './hooks/useAuth';
+
+// Import all components
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import Confirmation from './pages/Confirmation';
-import ExamSelection from './pages/ExamSelection';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
+import ExamSelectionOnboarding from './pages/ExamSelectionOnboarding';
+import LoadingScreen from './components/LoadingScreen';
 import TestDetails from './pages/TestDetails';
 import TestScreen from './pages/TestScreen';
-import TestResults from './pages/TestResults';
-import AdminConsole from './pages/AdminConsole';
-import ExamDetails from './pages/ExamDetails';
-import QuestionDetails from './pages/QuestionDetails';
-import AuthCallback from './pages/AuthCallback';
-import TestsListingPage from './pages/TestsListingPage';
-import AdminDebugger from './pages/AdminDebugger';
-import ResetPassword from './pages/ResetPassword';
-import ExamSelectionOnboarding from './pages/ExamSelectionOnboarding';
-import './App.css';
-import './styles/global.css';
-import './styles/components.css';
-import './styles/variables.css';
-import ProtectedRoute from './components/ProtectedRoute';
-import ErrorBoundary from './components/ErrorBoundary';
-
-const ErrorPage = () => {
-  return (
-    <div style={{ 
-      padding: '20px', 
-      textAlign: 'center', 
-      fontFamily: 'system-ui' 
-    }}>
-      <h1>Oops!</h1>
-      <p>Sorry, an unexpected error has occurred.</p>
-      <button onClick={() => window.location.href = '/'}>
-        Go to Home
-      </button>
-    </div>
-  );
-};
-
-const router = createBrowserRouter([
-  {
-    path: '/',
-    element: <Navigate to="/dashboard" replace />,
-    errorElement: <ErrorPage />
-  },
-  {
-    path: '/login',
-    element: <Login />,
-    errorElement: <ErrorPage />
-  },
-  {
-    path: '/signup',
-    element: <Signup />,
-    errorElement: <ErrorPage />
-  },
-  {
-    path: '/confirmation',
-    element: <Confirmation />,
-    errorElement: <ErrorPage />
-  },
-  {
-    path: '/auth/callback',
-    element: <AuthCallback />,
-    errorElement: <ErrorPage />
-  },
-  {
-    path: '/reset-password',
-    element: <ResetPassword />,
-    errorElement: <ErrorPage />
-  },
-  {
-    path: '/',
-    element: <ProtectedRoute />,
-    errorElement: <ErrorPage />,
-    children: [
-      {
-        path: 'dashboard',
-        element: (
-          <ErrorBoundary>
-            <Dashboard />
-          </ErrorBoundary>
-        )
-      },
-      {
-        path: 'exams',
-        element: <ExamSelectionOnboarding />
-      },
-      {
-        path: 'exam/:examId',
-        element: <ExamDetails />
-      },
-      {
-        path: 'exam/:examId/tests',
-        element: <TestsListingPage />
-      },
-      {
-        path: 'test/:testId',
-        element: <TestDetails />
-      },
-      {
-        path: 'test/:testId/questions',
-        element: <TestScreen />
-      },
-      {
-        path: 'test/:testId/results/:resultId',
-        element: <TestResults />
-      },
-      {
-        path: 'tests',
-        element: <TestsListingPage />
-      },
-      {
-        path: 'admin',
-        element: <AdminConsole />
-      },
-      {
-        path: 'admin/question/:questionId',
-        element: <QuestionDetails />
-      },
-      {
-        path: 'admin/debugger',
-        element: <AdminDebugger />
-      }
-    ]
-  },
-  {
-    path: '*',
-    element: <Navigate to="/dashboard" replace />,
-    errorElement: <ErrorPage />
-  }
-]);
+import PrivateRoute from './components/PrivateRoute';
 
 function App() {
+  const { user, isLoading: authLoading } = useAuth();
+  const [initializing, setInitializing] = useState(true);
+  const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
+  const [initialRoute, setInitialRoute] = useState(null);
+
+  useEffect(() => {
+    const checkInitialState = async () => {
+      try {
+        // Wait for auth to be checked
+        if (authLoading) return;
+
+        // If no user after auth check, redirect to login
+        if (!user) {
+          setInitialRoute('/login');
+          setInitializing(false);
+          return;
+        }
+
+        // Check profile status
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('name, selected_exam_id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        const hasProfile = Boolean(data?.name && data?.selected_exam_id);
+        setIsOnboardingComplete(hasProfile);
+        setInitialRoute(hasProfile ? '/dashboard' : '/onboarding');
+      } catch (error) {
+        console.error('Error checking initial state:', error);
+        setInitialRoute('/login');
+      } finally {
+        setInitializing(false);
+      }
+    };
+
+    checkInitialState();
+  }, [user, authLoading]);
+
+  // Show loading screen until auth is checked and initial route is determined
+  if (authLoading || initializing || !initialRoute) {
+    return <LoadingScreen />;
+  }
+
   return (
-    <RouterProvider 
-      router={router} 
-      future={{ 
-        v7_startTransition: true, 
-        v7_relativeSplatPath: true 
-      }} 
-    />
+    <Router>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Signup />} />
+        <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+        <Route path="/test/:testId" element={<PrivateRoute><TestScreen /></PrivateRoute>} />
+        <Route path="/test-details/:testId" element={<PrivateRoute><TestDetails /></PrivateRoute>} />
+        <Route path="/test/:testId/take" element={<PrivateRoute><TestScreen /></PrivateRoute>} />
+
+        {/* Public routes */}
+        <Route path="/reset-password" element={<ResetPassword />} />
+
+        {/* Protected routes */}
+        <Route 
+          path="/onboarding" 
+          element={
+            !user ? (
+              <Navigate to="/login" replace />
+            ) : isOnboardingComplete ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <ExamSelectionOnboarding />
+            )
+          }
+        />
+        
+        <Route 
+          path="/dashboard" 
+          element={
+            !user ? (
+              <Navigate to="/login" replace />
+            ) : !isOnboardingComplete ? (
+              <Navigate to="/onboarding" replace />
+            ) : (
+              <Dashboard />
+            )
+          }
+        />
+
+        {/* Default route */}
+        <Route 
+          path="*" 
+          element={<Navigate to={initialRoute} replace />}
+        />
+      </Routes>
+    </Router>
   );
 }
 

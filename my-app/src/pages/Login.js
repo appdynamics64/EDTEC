@@ -71,31 +71,38 @@ const Login = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    
-    if (!isFormValid()) {
-      setEmailTouched(true);
-      setPasswordTouched(true);
-      return;
-    }
+    setLoading(true);
+    setError(null);
 
     try {
-      setLoading(true);
-      setError(null);
-      
-      const { error } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          persistSession: rememberMe
-        }
-      });
-      
-      if (error) throw error;
-      
-      navigate('/dashboard');
+      // Handle login
+      const { data: authData, error: authError } = await supabase.auth
+        .signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
+
+      if (authError) throw authError;
+
+      // Check onboarding status immediately after login
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('name, selected_exam_id')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+
+      if (profileError) throw profileError;
+
+      // Redirect based on onboarding status
+      if (profiles?.name && profiles?.selected_exam_id) {
+        navigate('/dashboard', { replace: true });
+      } else {
+        navigate('/onboarding', { replace: true });
+      }
+
     } catch (error) {
-      console.error('Login error:', error);
-      setError(error.message || 'An error occurred during login');
+      console.error('Error:', error);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
