@@ -18,6 +18,8 @@ const TestDetails = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFinishPopup, setShowFinishPopup] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(0);
+  const [userAnswers, setUserAnswers] = useState({});
+  const [testAttemptId, setTestAttemptId] = useState(null);
 
   useEffect(() => {
     const fetchTestDetails = async () => {
@@ -25,7 +27,7 @@ const TestDetails = () => {
         setLoading(true);
         setError(null);
 
-        // First fetch test details with exam_id
+        // First fetch test details
         const { data: test, error: testError } = await supabase
           .from('tests')
           .select(`
@@ -40,6 +42,61 @@ const TestDetails = () => {
           .single();
 
         if (testError) throw testError;
+
+        // Check for any in-progress attempts that need to be finalized
+        const { data: inProgressAttempts, error: checkAttemptsError } = await supabase
+          .from('test_attempts')
+          .select('*')
+          .eq('test_id', testId)
+          .eq('user_id', user.id)
+          .is('end_time', null);
+
+        if (checkAttemptsError) throw checkAttemptsError;
+
+        // Finalize any expired attempts
+        const finalizationPromises = (inProgressAttempts || []).map(attempt => {
+          const startTime = new Date(attempt.start_time);
+          const duration = test.test_duration * 60 * 1000; // Convert to milliseconds
+          if (Date.now() - startTime.getTime() > duration) {
+            return supabase.rpc('finalize_test_attempt', {
+              p_test_attempt_id: attempt.id,
+              p_ended_by: 'timeout'
+            });
+          }
+          return Promise.resolve();
+        });
+
+        await Promise.all(finalizationPromises);
+
+        // Now fetch all attempts including the finalized ones
+        const { data: testAttempts, error: attemptsError } = await supabase
+          .from('test_attempts')
+          .select(`
+            id,
+            start_time,
+            end_time,
+            final_score,
+            created_at,
+            test_attempt_answers (
+              id,
+              question_id,
+              selected_option_id,
+              selected_option:question_options!selected_option_id (
+                id,
+                is_correct
+              )
+            )
+          `)
+          .eq('test_id', testId)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (attemptsError) throw attemptsError;
+
+        if (testAttempts && testAttempts.length > 0) {
+          setTestAttemptId(testAttempts[0].id);
+        }
 
         // Then fetch scoring rules for this exam
         const { data: scoringRule, error: scoringError } = await supabase
@@ -60,44 +117,17 @@ const TestDetails = () => {
 
         const totalQuestions = testQuestions?.length || test.number_of_questions;
 
-        // Updated query with proper join to question_options
-        const { data: attempts, error: attemptsError } = await supabase
-          .from('test_attempts')
-          .select(`
-            id,
-            start_time,
-            end_time,
-            final_score,
-            created_at,
-            test_attempt_answers (
-              id,
-              question_id,
-              selected_option_id,
-              selected_option:question_options!selected_option_id (
-                id,
-                is_correct
-              )
-            )
-          `)
-          .eq('test_id', testId)
-          .eq('user_id', user.id)
-          .not('end_time', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        console.log('Raw attempt data:', attempts?.[0]); // Debug log
-
-        if (attemptsError) throw attemptsError;
+        console.log('Raw attempt data:', testAttempts?.[0]); // Debug log
 
         setTestData({ ...test, scoringRule });
         
-        if (!attempts || attempts.length === 0) {
+        if (!testAttempts || testAttempts.length === 0) {
           setLastAttempt(null);
           setAttemptStats(null);
           return;
         }
 
-        const lastAttempt = attempts[0];
+        const lastAttempt = testAttempts[0];
         setLastAttempt(lastAttempt);
 
         // Get unique attempted questions (to avoid counting duplicates)
@@ -196,47 +226,26 @@ const TestDetails = () => {
         setSubmissionError("User not authenticated. Please log in again.");
         return;
       }
+
+      if (!testAttemptId) {
+        setSubmissionError("No active test attempt found.");
+        return;
+      }
       
-      // Calculate attempted questions
-      const attemptedQuestions = Object.keys(userAnswers).length;
-      
-      // First update the test status to completed
-      const { error: updateError } = await supabase
-        .from('test_attempts')
-        .update({
-          status: 'completed',
-          end_time: new Date().toISOString()
-        })
-        .eq('test_id', testId)
-        .eq('user_id', user.id)
-        .eq('status', 'in_progress');
-        
+      // Use the testAttemptId to finalize the test
+      const { error: updateError } = await supabase.rpc('finalize_test_attempt', {
+        p_test_attempt_id: testAttemptId,
+        p_ended_by: 'user'
+      });
+
       if (updateError) {
-        console.error('Error updating test status:', updateError);
-        setSubmissionError(`Failed to update test status: ${updateError.message}`);
+        console.error('Error finalizing test:', updateError);
+        setSubmissionError(`Failed to finalize test: ${updateError.message}`);
         return;
       }
-      
-      // Then insert the final test record
-      const { error: insertError } = await supabase
-        .from('user_tests')
-        .insert({
-          user_id: user.id,
-          test_id: testId,
-          status: 'completed',
-          score: 0, // This will be calculated later
-          end_time: new Date().toISOString(),
-          total_questions_answered: attemptedQuestions
-        });
-        
-      if (insertError) {
-        console.error('Error creating user test:', insertError);
-        setSubmissionError(`Database error: ${insertError.message}`);
-        return;
-      }
-      
-      console.log('Test completed successfully, navigating to results...');
-      navigate(`/test-result/${testId}`, { replace: true });
+
+      // Navigate to test details page
+      navigate(`/test-details/${testId}`);
       
     } catch (error) {
       console.error('Error finishing test:', error);
