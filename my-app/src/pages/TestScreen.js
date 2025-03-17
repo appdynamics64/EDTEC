@@ -20,13 +20,17 @@ const TestScreen = () => {
 
   useEffect(() => {
     const initializeTest = async () => {
-      if (!user) return;
+      if (!user || !user.id) {
+        console.error('User not properly authenticated');
+        navigate('/login');
+        return;
+      }
       
       try {
         setLoading(true);
         setError(null);
 
-        // 1. First fetch test details
+        // 1. First fetch test details with exam_id
         const { data: test, error: testError } = await supabase
           .from('tests')
           .select(`
@@ -34,7 +38,8 @@ const TestScreen = () => {
             test_name,
             test_duration,
             number_of_questions,
-            type
+            type,
+            exam_id
           `)
           .eq('id', testId)
           .single();
@@ -44,46 +49,110 @@ const TestScreen = () => {
 
         setTestDetails(test);
 
-        // 2. Check for existing attempt
-        const { data: existingAttempt, error: existingError } = await supabase
+        // 2. Check for existing attempt and finalize if needed
+        const { data: attempts, error: attemptsError } = await supabase
           .from('test_attempts')
           .select('*')
           .eq('test_id', testId)
           .eq('user_id', user.id)
-          .is('end_time', null)
-          .single();
+          .is('end_time', null);
 
-        if (existingError && existingError.code !== 'PGRST116') {
-          throw new Error('Failed to check existing attempts');
+        if (attemptsError) throw new Error('Failed to check existing attempts');
+
+        // Finalize any expired attempts
+        for (const attempt of attempts || []) {
+          const startTime = new Date(attempt.start_time);
+          const duration = test.test_duration * 60 * 1000; // Convert to milliseconds
+          if (Date.now() - startTime.getTime() > duration) {
+            await supabase.rpc('finalize_test_attempt', {
+              p_test_attempt_id: attempt.id,
+              p_ended_by: 'timeout'
+            });
+          }
         }
 
-        // 3. Handle existing or create new attempt
+        // 3. Add this before creating new attempt
+        const { data: activeAttempts, error: activeError } = await supabase
+          .from('test_attempts')
+          .select('id')
+          .eq('test_id', testId)
+          .eq('user_id', user.id)
+          .is('end_time', null)
+          .limit(1);
+
+        if (activeAttempts?.length > 0) {
+          throw new Error('An active attempt already exists');
+        }
+
+        // 4. Create new attempt only if no active attempt exists
         let attemptId;
-        if (existingAttempt) {
-          attemptId = existingAttempt.id;
-          const startTime = new Date(existingAttempt.start_time);
-          const elapsedSeconds = Math.floor((new Date() - startTime) / 1000);
+        const activeAttempt = (attempts || []).find(attempt => {
+          const startTime = new Date(attempt.start_time);
+          const duration = test.test_duration * 60 * 1000;
+          return Date.now() - startTime.getTime() <= duration;
+        });
+
+        if (activeAttempt) {
+          attemptId = activeAttempt.id;
+          const elapsedSeconds = Math.floor((Date.now() - new Date(activeAttempt.start_time)) / 1000);
           const totalSeconds = test.test_duration * 60;
           setTimeRemaining(Math.max(0, totalSeconds - elapsedSeconds));
         } else {
+          const validateTestAndUser = async () => {
+            // Validate test exists
+            const { data: testExists, error: testError } = await supabase
+              .from('tests')
+              .select('id')
+              .eq('id', testId)
+              .single();
+
+            if (testError || !testExists) {
+              throw new Error('Invalid test ID');
+            }
+
+            // Validate user exists in profiles
+            const { data: userExists, error: userError } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('id', user.id)
+              .single();
+
+            if (userError || !userExists) {
+              throw new Error('User profile not found');
+            }
+          };
+
+          await validateTestAndUser();
+          
           const { data: newAttempt, error: createError } = await supabase
             .from('test_attempts')
             .insert([{
-              test_id: testId,
+              test_id: parseInt(testId, 10),
               user_id: user.id,
-              start_time: new Date().toISOString()
+              start_time: new Date().toISOString(),
+              final_score: null,
+              end_time: null
             }])
             .select()
             .single();
 
-          if (createError) throw new Error('Failed to create test attempt');
+          if (createError) {
+            console.error('Test attempt creation failed:', {
+              error: createError,
+              testId,
+              userId: user.id,
+              timestamp: new Date().toISOString()
+            });
+            throw new Error(`Failed to create test attempt: ${createError.message}`);
+          }
+          
           attemptId = newAttempt.id;
           setTimeRemaining(test.test_duration * 60);
         }
 
         setTestAttemptId(attemptId);
 
-        // 4. Fetch questions
+        // 5. Fetch questions
         const { data: questionData, error: questionsError } = await supabase
           .from('test_questions')
           .select(`
@@ -114,7 +183,7 @@ const TestScreen = () => {
 
         setQuestions(formattedQuestions);
 
-        // 5. Load existing answers if any
+        // 6. Load existing answers if any
         if (attemptId) {
           const { data: existingAnswers } = await supabase
             .from('test_attempt_answers')
@@ -131,15 +200,17 @@ const TestScreen = () => {
         }
 
       } catch (error) {
-        console.error('Initialization error:', error);
+        console.error('Detailed error:', error);
         setError(error.message);
       } finally {
         setLoading(false);
       }
     };
 
-    initializeTest();
-  }, [testId, user]);
+    if (user) {
+      initializeTest();
+    }
+  }, [testId, user, navigate]);
 
   // Timer countdown
   useEffect(() => {
@@ -263,6 +334,10 @@ const TestScreen = () => {
       setIsSubmitting(false);
     }
   };
+
+  if (!user) {
+    return <LoadingScreen />;
+  }
 
   if (loading) return <LoadingScreen />;
   

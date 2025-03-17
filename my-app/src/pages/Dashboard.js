@@ -93,7 +93,7 @@ const Dashboard = () => {
         // Get exam details
         const { data: examData, error: examError } = await supabase
           .from('exams')
-          .select('*')
+        .select('*')
           .eq('id', profileData.selected_exam_id)
           .maybeSingle();
 
@@ -151,13 +151,13 @@ const Dashboard = () => {
 
         setTests(processedTests);
 
-      } catch (error) {
+    } catch (error) {
         console.error('Error loading dashboard data:', error);
         setError(error.message || 'Failed to load dashboard data');
-      } finally {
-        setLoading(false);
-      }
-    };
+    } finally {
+      setLoading(false);
+    }
+  };
 
     loadDashboardData();
   }, [user]);
@@ -170,8 +170,8 @@ const Dashboard = () => {
         // Updated query to remove status field which doesn't exist
         const { data: tests, error } = await supabase
           .from('tests')
-          .select(`
-            id,
+        .select(`
+          id,
             test_name,
             test_duration,
             number_of_questions,
@@ -214,7 +214,7 @@ const Dashboard = () => {
         });
 
         setUserTests(processedTests);
-      } catch (error) {
+    } catch (error) {
         console.error('Error fetching tests:', error);
         setError(error.message);
       } finally {
@@ -280,11 +280,11 @@ const Dashboard = () => {
         <div style={styles.infoItem}>
           <span>Duration:</span>
           <span>{test.test_duration} minutes</span>
-        </div>
+            </div>
         <div style={styles.infoItem}>
           <span>Type:</span>
           <span style={styles.testType}>{test.type}</span>
-        </div>
+                  </div>
         <div style={styles.infoItem}>
           <span>Status:</span>
           <span style={getStatusStyle(test.user_test_progress.status)}>
@@ -296,10 +296,10 @@ const Dashboard = () => {
               : test.user_test_progress.status === 'in_progress'
               ? 'In Progress'
               : 'Not Started'}
-          </span>
-        </div>
-      </div>
-      <button 
+                </span>
+                  </div>
+                </div>
+              <button 
         style={{
           ...styles.startButton,
           ...(test.user_test_progress.status === 'completed' && styles.viewDetailsButton)
@@ -314,8 +314,8 @@ const Dashboard = () => {
           : test.user_test_progress.status === 'in_progress'
           ? 'Continue'
           : 'Start Test'}
-      </button>
-    </div>
+              </button>
+                </div>
   );
 
   if (loading) return <LoadingScreen />;
@@ -325,8 +325,8 @@ const Dashboard = () => {
       <p>{error}</p>
       <button onClick={() => window.location.reload()} style={styles.retryButton}>
         Retry
-      </button>
-    </div>
+                    </button>
+                  </div>
   );
 
   return (
@@ -348,45 +348,45 @@ const Dashboard = () => {
             <div style={styles.profileMenu}>
               <button 
                 style={styles.menuItem}
-                onClick={() => {
+            onClick={() => {
                   setShowProfileModal(true);
                   setShowProfileMenu(false);
                 }}
               >
                 Edit Profile
-              </button>
-              <button 
+            </button>
+                <button 
                 style={styles.menuItem}
                 onClick={handleLogout}
               >
                 Logout
-              </button>
+                </button>
             </div>
-          )}
-        </div>
+                    )}
+                  </div>
       </header>
 
       {/* Exam Header */}
       <div style={styles.examHeader}>
         <h1>{selectedExam?.exam_name}</h1>
         <p>Prepare for your success</p>
-      </div>
-
+                    </div>
+                    
       {/* Test Filters */}
       <div style={styles.filters}>
         {['all', 'completed', 'recommended', 'custom'].map(filter => (
           <button
             key={filter}
-            style={{
+                          style={{
               ...styles.filterButton,
               ...(activeFilter === filter && styles.activeFilter)
             }}
             onClick={() => setActiveFilter(filter)}
           >
             {filter.charAt(0).toUpperCase() + filter.slice(1)}
-          </button>
-        ))}
-      </div>
+                      </button>
+              ))}
+            </div>
 
       {/* Tests Grid */}
       <div style={styles.testGrid}>
@@ -395,10 +395,10 @@ const Dashboard = () => {
 
       {/* Profile Modal */}
       {showProfileModal && (
-        <ProfileModal
+      <ProfileModal
           isOpen={showProfileModal}
           onClose={() => setShowProfileModal(false)}
-          userData={userData}
+        userData={userData}
         />
       )}
     </div>
@@ -611,4 +611,4 @@ const globalStyles = `
   }
 `;
 
-export default Dashboard;
+export default Dashboard; 
