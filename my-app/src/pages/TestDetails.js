@@ -20,6 +20,8 @@ const TestDetails = () => {
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [userAnswers, setUserAnswers] = useState({});
   const [testAttemptId, setTestAttemptId] = useState(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [inProgressAttempt, setInProgressAttempt] = useState(null);
 
   useEffect(() => {
     const fetchTestDetails = async () => {
@@ -43,30 +45,14 @@ const TestDetails = () => {
 
         if (testError) throw testError;
 
-        // Check for any in-progress attempts that need to be finalized
-        const { data: inProgressAttempts, error: checkAttemptsError } = await supabase
-          .from('test_attempts')
-          .select('*')
-          .eq('test_id', testId)
-          .eq('user_id', user.id)
-          .is('end_time', null);
+        // Fetch scoring rules for this exam
+        const { data: scoringRule, error: scoringError } = await supabase
+          .from('scoring_rules')
+          .select('marks_correct, marks_incorrect, marks_unanswered')
+          .eq('exam_id', test.exam_id)
+          .single();
 
-        if (checkAttemptsError) throw checkAttemptsError;
-
-        // Finalize any expired attempts
-        const finalizationPromises = (inProgressAttempts || []).map(attempt => {
-          const startTime = new Date(attempt.start_time);
-          const duration = test.test_duration * 60 * 1000; // Convert to milliseconds
-          if (Date.now() - startTime.getTime() > duration) {
-            return supabase.rpc('finalize_test_attempt', {
-              p_test_attempt_id: attempt.id,
-              p_ended_by: 'timeout'
-            });
-          }
-          return Promise.resolve();
-        });
-
-        await Promise.all(finalizationPromises);
+        if (scoringError) throw scoringError;
 
         // Now fetch all attempts including the finalized ones
         const { data: testAttempts, error: attemptsError } = await supabase
@@ -94,31 +80,6 @@ const TestDetails = () => {
 
         if (attemptsError) throw attemptsError;
 
-        if (testAttempts && testAttempts.length > 0) {
-          setTestAttemptId(testAttempts[0].id);
-        }
-
-        // Then fetch scoring rules for this exam
-        const { data: scoringRule, error: scoringError } = await supabase
-          .from('scoring_rules')
-          .select('marks_correct, marks_incorrect, marks_unanswered')
-          .eq('exam_id', test.exam_id)
-          .single();
-
-        if (scoringError) throw scoringError;
-
-        // Fetch test questions to get the actual total
-        const { data: testQuestions, error: questionsError } = await supabase
-          .from('test_questions')
-          .select('question_id')
-          .eq('test_id', testId);
-
-        if (questionsError) throw questionsError;
-
-        const totalQuestions = testQuestions?.length || test.number_of_questions;
-
-        console.log('Raw attempt data:', testAttempts?.[0]); // Debug log
-
         setTestData({ ...test, scoringRule });
         
         if (!testAttempts || testAttempts.length === 0) {
@@ -130,63 +91,29 @@ const TestDetails = () => {
         const lastAttempt = testAttempts[0];
         setLastAttempt(lastAttempt);
 
-        // Get unique attempted questions (to avoid counting duplicates)
-        const uniqueAttemptedQuestions = new Set(
-          lastAttempt.test_attempt_answers.map(answer => answer.question_id)
-        );
-        const attemptedQuestions = uniqueAttemptedQuestions.size;
-
-        // Validate attempted questions count
-        if (attemptedQuestions > totalQuestions) {
-          console.error('Invalid attempt count detected:', {
-            attempted: attemptedQuestions,
-            total: totalQuestions
-          });
-          // Use the total questions as the maximum possible attempts
-          attemptedQuestions = totalQuestions;
-        }
-        
-        // Check if selected option is correct
-        const correctAnswers = lastAttempt.test_attempt_answers.filter(answer => 
-          answer.selected_option && answer.selected_option.is_correct === true
-        ).length;
-
-        console.log('Answer statistics:', { // Debug log
-          totalQuestions,
-          uniqueAttempted: attemptedQuestions,
-          rawAttempted: lastAttempt.test_attempt_answers.length,
-          correct: correctAnswers,
-          answers: lastAttempt.test_attempt_answers.map(answer => ({
-            questionId: answer.question_id,
-            selectedOptionId: answer.selected_option_id,
-            isCorrect: answer.selected_option?.is_correct
-          }))
-        });
-
-        const wrongAnswers = attemptedQuestions - correctAnswers;
-        const unansweredQuestions = totalQuestions - attemptedQuestions;
-        
-        // Calculate marks based on scoring rules
-        const correctMarks = correctAnswers * scoringRule.marks_correct;
-        const negativeMarks = wrongAnswers * scoringRule.marks_incorrect;
-        const unansweredMarks = unansweredQuestions * scoringRule.marks_unanswered;
-        
-        // Calculate total and maximum possible marks
-        const totalMarks = correctMarks + negativeMarks + unansweredMarks;
-        const maxPossibleMarks = totalQuestions * scoringRule.marks_correct;
-
+        // Use the final_score from the attempt
         setAttemptStats({
-          totalQuestions,
-          attemptedQuestions,
-          correctAnswers,
-          wrongAnswers,
-          unansweredQuestions,
-          totalMarks: Math.round(totalMarks * 100) / 100,
-          maxPossibleMarks,
-          correctMarks,
-          negativeMarks: Math.abs(negativeMarks),
-          actualNegativeMarks: negativeMarks,
-          unansweredMarks
+          totalQuestions: test.number_of_questions,
+          attemptedQuestions: lastAttempt.test_attempt_answers.length,
+          correctAnswers: lastAttempt.test_attempt_answers.filter(answer => 
+            answer.selected_option && answer.selected_option.is_correct === true
+          ).length,
+          wrongAnswers: lastAttempt.test_attempt_answers.filter(answer => 
+            answer.selected_option && answer.selected_option.is_correct === false
+          ).length,
+          unansweredQuestions: test.number_of_questions - lastAttempt.test_attempt_answers.length,
+          totalMarks: lastAttempt.final_score,
+          maxPossibleMarks: test.number_of_questions * scoringRule.marks_correct,
+          correctMarks: lastAttempt.test_attempt_answers.filter(answer => 
+            answer.selected_option && answer.selected_option.is_correct === true
+          ).length * scoringRule.marks_correct,
+          negativeMarks: lastAttempt.test_attempt_answers.filter(answer => 
+            answer.selected_option && answer.selected_option.is_correct === false
+          ).length * Math.abs(scoringRule.marks_incorrect),
+          actualNegativeMarks: lastAttempt.test_attempt_answers.filter(answer => 
+            answer.selected_option && answer.selected_option.is_correct === false
+          ).length * Math.abs(scoringRule.marks_incorrect),
+          unansweredMarks: (test.number_of_questions - lastAttempt.test_attempt_answers.length) * scoringRule.marks_unanswered
         });
 
       } catch (error) {
@@ -208,70 +135,59 @@ const TestDetails = () => {
     };
   }, [testId, user, location.key]);
 
-  const handleStartTest = () => {
-    navigate(`/test/${testId}/take`);
+  const handleStartTest = async () => {
+    try {
+      // Check for in-progress attempts
+      const { data: activeAttempt, error } = await supabase
+        .from('test_attempts')
+        .select('*')
+        .eq('test_id', testId)
+        .eq('user_id', user.id)
+        .is('end_time', null)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 is the "no rows returned" error
+        throw error;
+      }
+
+      if (activeAttempt) {
+        // There's an active attempt, show the confirmation modal
+        setInProgressAttempt(activeAttempt);
+        setShowConfirmModal(true);
+      } else {
+        // No active attempt, proceed to start new test
+        navigate(`/test/${testId}/take`);
+      }
+    } catch (error) {
+      console.error('Error checking test attempts:', error);
+      // Handle error appropriately
+    }
   };
 
   const handleViewSolutions = () => {
     navigate(`/test/${testId}/solutions/${lastAttempt.id}`);
   };
 
-  const handleFinishTest = async () => {
-    try {
-      setSubmissionError(null);
-      setIsSubmitting(true);
-      setShowFinishPopup(false);
-      
-      if (!user) {
-        setSubmissionError("User not authenticated. Please log in again.");
-        return;
-      }
-
-      if (!testAttemptId) {
-        setSubmissionError("No active test attempt found.");
-        return;
-      }
-      
-      // Use the testAttemptId to finalize the test
-      const { error: updateError } = await supabase.rpc('finalize_test_attempt', {
-        p_test_attempt_id: testAttemptId,
-        p_ended_by: 'user'
-      });
-
-      if (updateError) {
-        console.error('Error finalizing test:', updateError);
-        setSubmissionError(`Failed to finalize test: ${updateError.message}`);
-        return;
-      }
-
-      // Navigate to test details page
-      navigate(`/test-details/${testId}`);
-      
-    } catch (error) {
-      console.error('Error finishing test:', error);
-      setSubmissionError(`Error: ${error.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleContinueTest = () => {
+    setShowConfirmModal(false);
+    navigate(`/test/${testId}/take`);
   };
 
-  // Timer effect that also handles test completion
-  useEffect(() => {
-    if (testData && testData.test_duration) {
-      const timer = setInterval(() => {
-        setTimeRemaining(prev => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            handleFinishTest(); // This will update the status and navigate
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+  const handleStartNewTest = async () => {
+    try {
+      // Finalize the existing attempt
+      await supabase.rpc('finalize_test_attempt', {
+        p_test_attempt_id: inProgressAttempt.id,
+        p_ended_by: 'user'
+      });
       
-      return () => clearInterval(timer);
+      // Navigate to start new test
+      navigate(`/test/${testId}/take`);
+    } catch (error) {
+      console.error('Error finalizing existing attempt:', error);
+      // Handle error appropriately
     }
-  }, [testData]);
+  };
 
   if (loading) return <LoadingScreen />;
   if (error) return <div style={styles.error}>{error}</div>;
@@ -356,7 +272,7 @@ const TestDetails = () => {
                 <span style={styles.statLabel}>Final Score</span>
                 <span style={styles.statValue}>
                   <span style={styles.scoreValue}>
-                    {attemptStats.totalMarks < 0 ? '-' : ''}{Math.abs(attemptStats.totalMarks)}/{attemptStats.maxPossibleMarks}
+                    {lastAttempt.final_score}/{attemptStats.maxPossibleMarks}
                   </span>
                 </span>
               </div>
@@ -373,6 +289,48 @@ const TestDetails = () => {
         <button onClick={handleStartTest} style={styles.startButton}>
           {lastAttempt ? 'Retake Test' : 'Start Test'}
         </button>
+      </div>
+
+      <ConfirmationModal 
+        isOpen={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        onContinue={handleContinueTest}
+        onStartNew={handleStartNewTest}
+      />
+    </div>
+  );
+};
+
+const ConfirmationModal = ({ isOpen, onClose, onContinue, onStartNew }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div style={modalStyles.overlay}>
+      <div style={modalStyles.modal}>
+        <h2 style={modalStyles.title}>Test In Progress</h2>
+        <p style={modalStyles.message}>
+          You have an unfinished test attempt. Would you like to continue where you left off or start a new attempt?
+        </p>
+        <div style={modalStyles.buttons}>
+          <button 
+            onClick={onContinue}
+            style={{...modalStyles.button, ...modalStyles.continueButton}}
+          >
+            Continue Test
+          </button>
+          <button 
+            onClick={onStartNew}
+            style={{...modalStyles.button, ...modalStyles.newButton}}
+          >
+            Start New Test
+          </button>
+          <button 
+            onClick={onClose}
+            style={{...modalStyles.button, ...modalStyles.cancelButton}}
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -519,6 +477,73 @@ const styles = {
     backgroundColor: 'white',
     borderRadius: '8px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+};
+
+const modalStyles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    padding: '24px',
+    width: '90%',
+    maxWidth: '500px',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  },
+  title: {
+    margin: '0 0 16px 0',
+    fontSize: '1.5rem',
+    fontWeight: '600',
+  },
+  message: {
+    marginBottom: '24px',
+    fontSize: '1rem',
+    color: '#4B5563',
+  },
+  buttons: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'flex-end',
+  },
+  button: {
+    padding: '8px 16px',
+    borderRadius: '6px',
+    border: 'none',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+  },
+  continueButton: {
+    backgroundColor: '#10B981',
+    color: 'white',
+    '&:hover': {
+      backgroundColor: '#059669',
+    },
+  },
+  newButton: {
+    backgroundColor: '#EF4444',
+    color: 'white',
+    '&:hover': {
+      backgroundColor: '#DC2626',
+    },
+  },
+  cancelButton: {
+    backgroundColor: '#6B7280',
+    color: 'white',
+    '&:hover': {
+      backgroundColor: '#4B5563',
+    },
   },
 };
 

@@ -167,7 +167,7 @@ const Dashboard = () => {
       try {
         setLoading(true);
         
-        // Updated query to remove status field which doesn't exist
+        // First fetch tests with their attempts
         const { data: tests, error } = await supabase
           .from('tests')
         .select(`
@@ -188,10 +188,9 @@ const Dashboard = () => {
 
         if (error) throw error;
 
-        // Process the tests to determine status based on start_time and end_time
-        const processedTests = tests.map(test => {
+        // Process the tests and finalize any expired attempts
+        const processedTests = await Promise.all(tests.map(async test => {
           const attempts = test.test_attempts || [];
-          // Sort attempts by created_at in descending order and get the latest
           const latestAttempt = attempts.sort((a, b) => 
             new Date(b.created_at) - new Date(a.created_at)
           )[0];
@@ -201,7 +200,27 @@ const Dashboard = () => {
             if (latestAttempt.end_time || latestAttempt.final_score !== null) {
               status = 'completed';
             } else if (latestAttempt.start_time) {
-              status = 'in_progress';
+              // Check if the test should have ended based on duration
+              const startTime = new Date(latestAttempt.start_time);
+              const shouldEndTime = new Date(startTime.getTime() + (test.test_duration * 60 * 1000));
+              const now = new Date();
+
+              if (now > shouldEndTime) {
+                // Test should be finished - call finalize_test_attempt
+                try {
+                  await supabase.rpc('finalize_test_attempt', {
+                    p_test_attempt_id: latestAttempt.id,
+                    p_ended_by: 'timeout'
+                  });
+                  status = 'completed';
+    } catch (error) {
+                  console.error('Error finalizing expired test:', error);
+                  // Keep status as in_progress if finalization fails
+                  status = 'in_progress';
+                }
+              } else {
+                status = 'in_progress';
+              }
             }
           }
 
@@ -211,13 +230,13 @@ const Dashboard = () => {
             lastAttemptDate: latestAttempt?.created_at || null,
             completed: status === 'completed'
           };
-        });
+        }));
 
         setUserTests(processedTests);
     } catch (error) {
         console.error('Error fetching tests:', error);
         setError(error.message);
-      } finally {
+    } finally {
         setLoading(false);
       }
     };
