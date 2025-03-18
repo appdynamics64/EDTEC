@@ -9,7 +9,6 @@ const Signup = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [passwordStrength, setPasswordStrength] = useState(0);
@@ -19,8 +18,7 @@ const Signup = () => {
   const [touched, setTouched] = useState({
     email: false,
     password: false,
-    confirmPassword: false,
-    name: false
+    confirmPassword: false
   });
 
   // Track window size for responsive design
@@ -113,12 +111,8 @@ const Signup = () => {
     return confirmPassword === password && password.length > 0;
   };
 
-  const isNameValid = () => {
-    return name.trim().length >= 2;
-  };
-
   const isFormValid = () => {
-    return isEmailValid() && isPasswordValid() && isConfirmPasswordValid() && isNameValid();
+    return isEmailValid() && isPasswordValid() && isConfirmPasswordValid();
   };
 
   const handleSignup = async (e) => {
@@ -129,7 +123,7 @@ const Signup = () => {
       setError(null);
       
       // Validate form data
-      if (!email || !password || !name) {
+      if (!email || !password) {
         setError('Please fill in all fields');
         setLoading(false);
         return;
@@ -146,9 +140,6 @@ const Signup = () => {
         email,
         password,
         options: {
-          data: {
-            name,
-          },
           emailRedirectTo: `${window.location.origin}/auth/callback`
         }
       });
@@ -162,7 +153,6 @@ const Signup = () => {
           .insert({
             id: user.id,
             email: user.email,
-            name: name,
             role: 'user',
             email_verified: false,
             is_new_user: true,
@@ -171,7 +161,6 @@ const Signup = () => {
           
         if (profileError) {
           console.error('Error creating user profile:', profileError);
-          // Continue anyway, as the auth record was created successfully
         }
         
         // Store email for verification page
@@ -232,31 +221,6 @@ const Signup = () => {
             )}
             
             <form onSubmit={handleSignup} style={styles.form}>
-              <div style={styles.formGroup}>
-                <label htmlFor="name" style={styles.label}>
-                  Full name
-                </label>
-                <input
-                  id="name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onBlur={() => handleBlur('name')}
-                  style={{
-                    ...styles.input,
-                    ...(touched.name && !isNameValid() ? styles.inputError : {})
-                  }}
-                  placeholder="Your name"
-                  disabled={loading}
-                  required
-                />
-                {touched.name && !isNameValid() && (
-                  <p style={styles.fieldError}>
-                    Name must be at least 2 characters
-                  </p>
-                )}
-              </div>
-              
               <div style={styles.formGroup}>
                 <label htmlFor="email" style={styles.label}>
                   Email address

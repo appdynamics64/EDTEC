@@ -57,6 +57,8 @@ const Dashboard = () => {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [userData, setUserData] = useState(null);
   const [userTests, setUserTests] = useState([]);
+  const [availableExams, setAvailableExams] = useState([]);
+  const [isChangingExam, setIsChangingExam] = useState(false);
 
   // Filter tests based on activeFilter
   const filteredTests = tests.filter(test => {
@@ -88,19 +90,29 @@ const Dashboard = () => {
         if (profileError) throw profileError;
         if (!profileData?.selected_exam_id) throw new Error('No exam selected');
 
-        setUserData(profileData);
+        // Add email from user object to profileData
+        setUserData({
+          ...profileData,
+          email: user.email
+        });
 
-        // Get exam details
-        const { data: examData, error: examError } = await supabase
+        // Get all available exams
+        const { data: exams, error: examsError } = await supabase
           .from('exams')
-        .select('*')
-          .eq('id', profileData.selected_exam_id)
-          .maybeSingle();
+          .select('*')
+          .order('exam_name');
 
-        if (examError) throw examError;
-        if (!examData) throw new Error('Exam not found');
+        if (examsError) throw examsError;
+        setAvailableExams(exams);
 
-        setSelectedExam(examData);
+        // If no exam is selected, use the first available exam
+        const selectedExamId = profileData?.selected_exam_id || exams[0]?.id;
+
+        if (!selectedExamId) throw new Error('No exams available');
+
+        // Get selected exam details
+        const selectedExam = exams.find(exam => exam.id === selectedExamId);
+        setSelectedExam(selectedExam);
 
         // Get tests with their attempts and final scores
         const { data: testsData, error: testsError } = await supabase
@@ -337,6 +349,56 @@ const Dashboard = () => {
                 </div>
   );
 
+  const handleExamChange = async (newExamId) => {
+    try {
+      // Update the user's selected exam in the database
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ selected_exam_id: newExamId })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      // Refresh the dashboard data
+      window.location.reload(); // Simple reload to refresh all data
+    } catch (error) {
+      console.error('Error changing exam:', error);
+      alert('Failed to change exam. Please try again.');
+    }
+  };
+
+  const ExamSelector = ({ currentExam, exams, onSelect, onClose }) => {
+    if (!exams.length) return null;
+
+  return (
+      <div style={examSelectorStyles.overlay}>
+        <div style={examSelectorStyles.modal}>
+          <h2 style={examSelectorStyles.title}>Select Exam</h2>
+          <div style={examSelectorStyles.examList}>
+            {exams.map(exam => (
+              <button
+                key={exam.id}
+                style={{
+                  ...examSelectorStyles.examButton,
+                  ...(currentExam?.id === exam.id && examSelectorStyles.selectedExam)
+                }}
+                onClick={() => onSelect(exam.id)}
+              >
+                {exam.exam_name}
+              </button>
+            ))}
+          </div>
+                    <button 
+            style={examSelectorStyles.closeButton}
+            onClick={onClose}
+          >
+            Cancel
+                    </button>
+                  </div>
+              </div>
+    );
+  };
+
   if (loading) return <LoadingScreen />;
   if (error) return (
     <div style={styles.errorContainer}>
@@ -345,7 +407,7 @@ const Dashboard = () => {
       <button onClick={() => window.location.reload()} style={styles.retryButton}>
         Retry
                     </button>
-                  </div>
+              </div>
   );
 
   return (
@@ -382,15 +444,23 @@ const Dashboard = () => {
                 </button>
             </div>
                     )}
-                  </div>
+          </div>
       </header>
 
       {/* Exam Header */}
       <div style={styles.examHeader}>
-        <h1>{selectedExam?.exam_name}</h1>
+        <div style={styles.examTitleContainer}>
+          <h1>{selectedExam?.exam_name}</h1>
+              <button 
+            onClick={() => setIsChangingExam(true)}
+            style={styles.changeExamButton}
+          >
+            Change Exam
+              </button>
+            </div>
         <p>Prepare for your success</p>
-                    </div>
-                    
+                  </div>
+                  
       {/* Test Filters */}
       <div style={styles.filters}>
         {['all', 'completed', 'recommended', 'custom'].map(filter => (
@@ -417,7 +487,23 @@ const Dashboard = () => {
       <ProfileModal
           isOpen={showProfileModal}
           onClose={() => setShowProfileModal(false)}
-        userData={userData}
+        userData={{
+          ...userData,
+          email: user.email
+        }}
+        />
+      )}
+
+      {/* Add the ExamSelector modal */}
+      {isChangingExam && (
+        <ExamSelector
+          currentExam={selectedExam}
+          exams={availableExams}
+          onSelect={(examId) => {
+            handleExamChange(examId);
+            setIsChangingExam(false);
+          }}
+          onClose={() => setIsChangingExam(false)}
         />
       )}
     </div>
@@ -620,6 +706,25 @@ const styles = {
       backgroundColor: '#2D3748',
     },
   },
+  examTitleContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '16px',
+  },
+  changeExamButton: {
+    padding: '8px 16px',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    '&:hover': {
+      backgroundColor: '#2563eb',
+    },
+  },
 };
 
 // Add some CSS to your global styles or component
@@ -629,5 +734,69 @@ const globalStyles = `
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
   }
 `;
+
+const examSelectorStyles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    padding: '24px',
+    width: '90%',
+    maxWidth: '500px',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  },
+  title: {
+    margin: '0 0 16px 0',
+    fontSize: '1.5rem',
+    fontWeight: '600',
+  },
+  examList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    marginBottom: '20px',
+  },
+  examButton: {
+    padding: '12px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '6px',
+    backgroundColor: 'white',
+    cursor: 'pointer',
+    textAlign: 'left',
+    fontSize: '1rem',
+    transition: 'all 0.2s',
+    '&:hover': {
+      backgroundColor: '#f3f4f6',
+    },
+  },
+  selectedExam: {
+    borderColor: '#3b82f6',
+    backgroundColor: '#eff6ff',
+    color: '#3b82f6',
+  },
+  closeButton: {
+    padding: '8px 16px',
+    backgroundColor: '#6B7280',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    '&:hover': {
+      backgroundColor: '#4B5563',
+    },
+  },
+};
 
 export default Dashboard; 
