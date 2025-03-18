@@ -30,7 +30,7 @@ const TestScreen = () => {
         setLoading(true);
         setError(null);
 
-        // 1. First fetch test details with exam_id
+        // 1. First fetch test details
         const { data: test, error: testError } = await supabase
           .from('tests')
           .select(`
@@ -49,105 +49,81 @@ const TestScreen = () => {
 
         setTestDetails(test);
 
-        // 2. Check for existing attempt and finalize if needed
-        const { data: attempts, error: attemptsError } = await supabase
+        // 2. Get ONLY active attempts (not ended)
+        const { data: activeAttempts, error: activeError } = await supabase
           .from('test_attempts')
           .select('*')
           .eq('test_id', testId)
           .eq('user_id', user.id)
-          .is('end_time', null);
+          .is('end_time', null)
+          .order('created_at', { ascending: false });
 
-        if (attemptsError) throw new Error('Failed to check existing attempts');
+        if (activeError) throw new Error('Failed to check active attempts');
 
-        // Finalize any expired attempts
-        for (const attempt of attempts || []) {
-          const startTime = new Date(attempt.start_time);
-          const duration = test.test_duration * 60 * 1000; // Convert to milliseconds
-          if (Date.now() - startTime.getTime() > duration) {
+        let attemptId;
+        const now = new Date();
+
+        if (activeAttempts && activeAttempts.length > 0) {
+          const latestAttempt = activeAttempts[0];
+          const startTime = new Date(latestAttempt.start_time);
+          const duration = test.test_duration * 60 * 1000;
+
+          if (now.getTime() - startTime.getTime() > duration) {
+            // Attempt has expired, finalize it first
             await supabase.rpc('finalize_test_attempt', {
-              p_test_attempt_id: attempt.id,
+              p_test_attempt_id: latestAttempt.id,
               p_ended_by: 'timeout'
             });
+
+            // Wait a moment to ensure finalization is complete
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Double-check no active attempts exist before creating new one
+            const { data: checkAgain } = await supabase
+              .from('test_attempts')
+              .select('id')
+              .eq('test_id', testId)
+              .eq('user_id', user.id)
+              .is('end_time', null)
+              .single();
+
+            if (!checkAgain) {
+              // Create new attempt only if there are no active attempts
+              const { data: attempt, error: attemptError } = await supabase
+                .rpc('create_test_attempt', {
+                  p_test_id: parseInt(test.id, 10),
+                  p_user_id: user.id
+                });
+
+                if (attemptError) throw new Error('Failed to create/get test attempt');
+                
+                attemptId = attempt.id;
+                setTimeRemaining(test.test_duration * 60);
+            } else {
+              attemptId = checkAgain.id;
+              const elapsedSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+              const totalSeconds = test.test_duration * 60;
+              setTimeRemaining(Math.max(0, totalSeconds - elapsedSeconds));
+            }
+          } else {
+            // Use existing active attempt
+            attemptId = latestAttempt.id;
+            const elapsedSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+            const totalSeconds = test.test_duration * 60;
+            setTimeRemaining(Math.max(0, totalSeconds - elapsedSeconds));
           }
-        }
-
-        // 3. Add this before creating new attempt
-        const { data: activeAttempts, error: activeError } = await supabase
-          .from('test_attempts')
-          .select('id')
-          .eq('test_id', testId)
-          .eq('user_id', user.id)
-          .is('end_time', null)
-          .limit(1);
-
-        if (activeAttempts?.length > 0) {
-          throw new Error('An active attempt already exists');
-        }
-
-        // 4. Create new attempt only if no active attempt exists
-        let attemptId;
-        const activeAttempt = (attempts || []).find(attempt => {
-          const startTime = new Date(attempt.start_time);
-          const duration = test.test_duration * 60 * 1000;
-          return Date.now() - startTime.getTime() <= duration;
-        });
-
-        if (activeAttempt) {
-          attemptId = activeAttempt.id;
-          const elapsedSeconds = Math.floor((Date.now() - new Date(activeAttempt.start_time)) / 1000);
-          const totalSeconds = test.test_duration * 60;
-          setTimeRemaining(Math.max(0, totalSeconds - elapsedSeconds));
         } else {
-          const validateTestAndUser = async () => {
-            // Validate test exists
-            const { data: testExists, error: testError } = await supabase
-              .from('tests')
-              .select('id')
-              .eq('id', testId)
-              .single();
-
-            if (testError || !testExists) {
-              throw new Error('Invalid test ID');
-            }
-
-            // Validate user exists in profiles
-            const { data: userExists, error: userError } = await supabase
-              .from('profiles')
-              .select('id')
-              .eq('id', user.id)
-              .single();
-
-            if (userError || !userExists) {
-              throw new Error('User profile not found');
-            }
-          };
-
-          await validateTestAndUser();
-          
-          const { data: newAttempt, error: createError } = await supabase
-            .from('test_attempts')
-            .insert([{
-              test_id: parseInt(testId, 10),
-              user_id: user.id,
-              start_time: new Date().toISOString(),
-              final_score: null,
-              end_time: null
-            }])
-            .select()
-            .single();
-
-          if (createError) {
-            console.error('Test attempt creation failed:', {
-              error: createError,
-              testId,
-              userId: user.id,
-              timestamp: new Date().toISOString()
+          // No active attempts exist, try to create one with a unique constraint
+          const { data: attempt, error: attemptError } = await supabase
+            .rpc('create_test_attempt', {
+              p_test_id: parseInt(test.id, 10),
+              p_user_id: user.id
             });
-            throw new Error(`Failed to create test attempt: ${createError.message}`);
-          }
-          
-          attemptId = newAttempt.id;
-          setTimeRemaining(test.test_duration * 60);
+
+            if (attemptError) throw new Error('Failed to create/get test attempt');
+            
+            attemptId = attempt.id;
+            setTimeRemaining(test.test_duration * 60);
         }
 
         setTestAttemptId(attemptId);
@@ -220,7 +196,16 @@ const TestScreen = () => {
       setTimeRemaining(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          handleFinishTest();
+          // Call finalize_test_attempt with 'timeout' reason
+          supabase.rpc('finalize_test_attempt', {
+            p_test_attempt_id: testAttemptId,
+            p_ended_by: 'timeout'
+          }).then(() => {
+            navigate(`/test-details/${testId}`);
+          }).catch(error => {
+            console.error('Error finalizing test:', error);
+            alert('Failed to submit test. Please try again.');
+          });
           return 0;
         }
         return prev - 1;
@@ -228,19 +213,24 @@ const TestScreen = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeRemaining]);
+  }, [timeRemaining, testAttemptId, testId, navigate]);
 
   const handleAnswerSelect = async (questionId, optionId) => {
     try {
-      // Save answer to database
-      const { error } = await supabase
-        .from('test_attempt_answers')
-        .upsert({
-          test_attempt_id: testAttemptId,
-          question_id: questionId,
-          selected_option_id: optionId,
-          created_at: new Date().toISOString()
-        });
+      // Find if the selected option is correct
+      const isCorrect = questions
+        .find(q => q.id === questionId)
+        ?.options
+        .find(o => o.id === optionId)
+        ?.is_correct || false;
+
+      // Use the new upsert function
+      const { error } = await supabase.rpc('upsert_test_attempt_answer', {
+        p_test_attempt_id: testAttemptId,
+        p_question_id: questionId,
+        p_selected_option_id: optionId,
+        p_is_correct: isCorrect
+      });
 
       if (error) throw error;
 
@@ -258,72 +248,15 @@ const TestScreen = () => {
     try {
       setIsSubmitting(true);
 
-      // Get test details and scoring rules
-      const { data: testData, error: testError } = await supabase
-        .from('tests')
-        .select(`
-          *,
-          exam:exam_id (
-            scoring_rules (
-              marks_correct,
-              marks_incorrect,
-              marks_unanswered
-            )
-          ),
-          test_questions (
-            id,
-            question_id
-          )
-        `)
-        .eq('id', testId)
-        .single();
+      // Call the finalize_test_attempt function instead of calculating score in frontend
+      const { error: finalizeError } = await supabase.rpc('finalize_test_attempt', {
+        p_test_attempt_id: testAttemptId,
+        p_ended_by: 'user'
+      });
 
-      if (testError) throw testError;
-
-      // Get all answers for this attempt
-      const { data: answers, error: answersError } = await supabase
-        .from('test_attempt_answers')
-        .select(`
-          id,
-          question_id,
-          selected_option_id,
-          selected_option:question_options!selected_option_id (
-            id,
-            is_correct
-          )
-        `)
-        .eq('test_attempt_id', testAttemptId);
-
-      if (answersError) throw answersError;
-
-      // Calculate score using the same logic as TestDetails.js
-      const totalQuestions = testData.test_questions.length;
-      const uniqueAttemptedQuestions = new Set(answers.map(answer => answer.question_id));
-      const attemptedQuestions = uniqueAttemptedQuestions.size;
-      const correctAnswers = answers.filter(answer => 
-        answer.selected_option && answer.selected_option.is_correct === true
-      ).length;
-
-      const wrongAnswers = attemptedQuestions - correctAnswers;
-      const unansweredQuestions = totalQuestions - attemptedQuestions;
-
-      const scoringRules = testData.exam.scoring_rules;
-      const correctMarks = correctAnswers * scoringRules.marks_correct;
-      const negativeMarks = wrongAnswers * scoringRules.marks_incorrect;
-      const unansweredMarks = unansweredQuestions * scoringRules.marks_unanswered;
-
-      const finalScore = correctMarks + negativeMarks + unansweredMarks;
-
-      // Update test attempt with final score
-      const { error: updateError } = await supabase
-        .from('test_attempts')
-        .update({ 
-          end_time: new Date().toISOString(),
-          final_score: finalScore
-        })
-        .eq('id', testAttemptId);
-
-      if (updateError) throw updateError;
+      if (finalizeError) {
+        throw finalizeError;
+      }
 
       // Navigate to results
       navigate(`/test-details/${testId}`);
