@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 import ProfileModal from '../components/ProfileModal';
+import { FaUserCog } from 'react-icons/fa';
 
 // Add this colors object at the top of the file, after the imports
 const colors = {
@@ -401,6 +402,10 @@ const Dashboard = () => {
     );
   };
 
+  const handleAdminClick = () => {
+    navigate('/admin');
+  };
+
   if (loading) return <LoadingScreen />;
   if (error) return (
     <div style={styles.errorContainer}>
@@ -446,6 +451,12 @@ const Dashboard = () => {
                 </button>
             </div>
                     )}
+          </div>
+          <div style={styles.adminButton}>
+            <button onClick={handleAdminClick}>
+              <FaUserCog style={{ marginRight: '8px' }} />
+              Admin Console
+            </button>
           </div>
       </header>
 
@@ -715,6 +726,20 @@ const styles = {
     gap: '16px',
   },
   changeExamButton: {
+    padding: '8px 16px',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    '&:hover': {
+      backgroundColor: '#2563eb',
+    },
+  },
+  adminButton: {
+    marginLeft: 'auto',
     padding: '8px 16px',
     backgroundColor: '#3b82f6',
     color: 'white',
