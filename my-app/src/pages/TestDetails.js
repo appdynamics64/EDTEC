@@ -155,12 +155,21 @@ const TestDetails = () => {
         setInProgressAttempt(activeAttempt);
         setShowConfirmModal(true);
       } else {
-        // No active attempt, proceed to start new test
+        // No active attempt, create a new one before navigating
+        const { data: newAttempt, error: createError } = await supabase
+          .rpc('create_test_attempt', {
+            p_test_id: parseInt(testId, 10),
+            p_user_id: user.id
+          });
+
+        if (createError) throw createError;
+        
+        // Navigate to test screen
         navigate(`/test/${testId}/take`);
       }
     } catch (error) {
-      console.error('Error checking test attempts:', error);
-      // Handle error appropriately
+      console.error('Error checking/creating test attempt:', error);
+      alert('Failed to start test. Please try again.');
     }
   };
 

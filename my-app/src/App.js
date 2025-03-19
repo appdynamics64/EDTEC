@@ -13,6 +13,7 @@ import LoadingScreen from './components/LoadingScreen';
 import TestDetails from './pages/TestDetails';
 import TestScreen from './pages/TestScreen';
 import PrivateRoute from './components/PrivateRoute';
+import TestSolution from './pages/TestSolution';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
@@ -100,6 +101,13 @@ function App() {
             )
           }
         />
+
+        <Route 
+          path="/test/:testId/solutions/:attemptId" 
+          element={<PrivateRoute><TestSolution /></PrivateRoute>} 
+        />
+
+        <Route path="/test-solution/:testId/:attemptId" element={<TestSolution />} />
 
         {/* Default route */}
         <Route 
