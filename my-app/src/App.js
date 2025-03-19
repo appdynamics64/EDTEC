@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './config/supabaseClient';
 import useAuth from './hooks/useAuth';
@@ -12,15 +12,17 @@ import ExamSelectionOnboarding from './pages/ExamSelectionOnboarding';
 import LoadingScreen from './components/LoadingScreen';
 import TestDetails from './pages/TestDetails';
 import TestScreen from './pages/TestScreen';
+import TestSolution from './pages/TestSolution';
+import AdminConsole from './pages/AdminConsole';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
-  const [initializing, setInitializing] = useState(true);
-  const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
-  const [initialRoute, setInitialRoute] = useState(null);
+  const [initializing, setInitializing] = React.useState(true);
+  const [isOnboardingComplete, setIsOnboardingComplete] = React.useState(false);
+  const [initialRoute, setInitialRoute] = React.useState(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const checkInitialState = async () => {
       try {
         // Wait for auth to be checked
@@ -110,13 +112,6 @@ function App() {
             </PrivateRoute>
           } 
         />
-
-        <Route 
-          path="/test/:testId/solutions/:attemptId" 
-          element={<PrivateRoute><TestSolution /></PrivateRoute>} 
-        />
-
-        <Route path="/test-solution/:testId/:attemptId" element={<TestSolution />} />
 
         {/* Default route */}
         <Route 
