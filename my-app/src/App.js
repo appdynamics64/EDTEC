@@ -13,6 +13,7 @@ import LoadingScreen from './components/LoadingScreen';
 import TestDetails from './pages/TestDetails';
 import TestScreen from './pages/TestScreen';
 import PrivateRoute from './components/PrivateRoute';
+import AdminConsole from './pages/AdminConsole';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
@@ -99,6 +100,16 @@ function App() {
               <Dashboard />
             )
           }
+        />
+
+        {/* Admin route */}
+        <Route 
+          path="/admin" 
+          element={
+            <PrivateRoute>
+              <AdminConsole />
+            </PrivateRoute>
+          } 
         />
 
         {/* Default route */}
