@@ -116,16 +116,24 @@ const TestScreen = () => {
           // No active attempts exist, try to create one with a unique constraint
           const { data: attempt, error: attemptError } = await supabase
             .rpc('create_test_attempt', {
-              p_test_id: parseInt(test.id, 10),
+              p_test_id: parseInt(testId, 10),
               p_user_id: user.id
             });
 
-            if (attemptError) throw new Error('Failed to create/get test attempt');
-            
-            attemptId = attempt.id;
-            setTimeRemaining(test.test_duration * 60);
+          if (attemptError) {
+            console.error('Create attempt error:', attemptError);
+            throw new Error(`Failed to create test attempt: ${attemptError.message}`);
+          }
+          
+          if (!attempt) {
+            throw new Error('No attempt was created');
+          }
+        
+          attemptId = attempt.id;
+          setTimeRemaining(test.test_duration * 60);
         }
 
+        console.log('Setting attempt ID:', attemptId);
         setTestAttemptId(attemptId);
 
         // 5. Fetch questions
@@ -177,7 +185,7 @@ const TestScreen = () => {
 
       } catch (error) {
         console.error('Detailed error:', error);
-        setError(error.message);
+        throw new Error('Failed to create or retrieve test attempt. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -196,12 +204,11 @@ const TestScreen = () => {
       setTimeRemaining(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          // Call finalize_test_attempt with 'timeout' reason
           supabase.rpc('finalize_test_attempt', {
-            p_test_attempt_id: testAttemptId,
-            p_ended_by: 'timeout'
-          }).then(() => {
-            navigate(`/test-details/${testId}`);
+            p_test_attempt_id: testAttemptId
+          }).then(async () => {
+            // Update this navigation path as well
+            navigate(`/test-solution/${testId}/${testAttemptId}`);
           }).catch(error => {
             console.error('Error finalizing test:', error);
             alert('Failed to submit test. Please try again.');
@@ -215,8 +222,24 @@ const TestScreen = () => {
     return () => clearInterval(timer);
   }, [timeRemaining, testAttemptId, testId, navigate]);
 
+  useEffect(() => {
+    console.log('testAttemptId changed to:', testAttemptId);
+  }, [testAttemptId]);
+
   const handleAnswerSelect = async (questionId, optionId) => {
     try {
+      console.log('Saving answer:', {
+        testAttemptId,
+        questionId,
+        optionId
+      });
+
+      // Optimistically update the UI
+      setSelectedAnswers(prev => ({
+        ...prev,
+        [questionId]: optionId
+      }));
+
       // Find if the selected option is correct
       const isCorrect = questions
         .find(q => q.id === questionId)
@@ -224,45 +247,66 @@ const TestScreen = () => {
         .find(o => o.id === optionId)
         ?.is_correct || false;
 
-      // Use the new upsert function
-      const { error } = await supabase.rpc('upsert_test_attempt_answer', {
+      // Call the upsert function
+      const { data, error } = await supabase.rpc('upsert_test_attempt_answer', {
         p_test_attempt_id: testAttemptId,
         p_question_id: questionId,
         p_selected_option_id: optionId,
         p_is_correct: isCorrect
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error saving answer:', error);
+        // Revert the optimistic update if there's an error
+        setSelectedAnswers(prev => {
+          const newAnswers = { ...prev };
+          delete newAnswers[questionId];
+          return newAnswers;
+        });
+        alert('Failed to save your answer. Please try again.');
+        throw error;
+      }
 
-      // Update local state
-      setSelectedAnswers(prev => ({
-        ...prev,
-        [questionId]: optionId
-      }));
+      console.log('Answer saved successfully:', data);
+
     } catch (error) {
-      console.error('Error saving answer:', error);
+      console.error('Detailed error:', error);
+      // Log the current state for debugging
+      console.log('Current state:', {
+        testAttemptId,
+        questions,
+        selectedAnswers
+      });
+      alert('There was a problem saving your answer. Please try again.');
     }
   };
 
   const handleFinishTest = async () => {
     try {
       setIsSubmitting(true);
+      console.log('Starting test finalization with attempt ID:', testAttemptId);
 
-      // Call the finalize_test_attempt function instead of calculating score in frontend
-      const { error: finalizeError } = await supabase.rpc('finalize_test_attempt', {
-        p_test_attempt_id: testAttemptId,
-        p_ended_by: 'user'
-      });
+      if (!testAttemptId) {
+        throw new Error('No test attempt ID found');
+      }
+
+      const { data: finalizeData, error: finalizeError } = await supabase
+        .rpc('finalize_test_attempt', {
+          p_test_attempt_id: testAttemptId
+        });
 
       if (finalizeError) {
+        console.error('Finalization error:', finalizeError);
         throw finalizeError;
       }
 
-      // Navigate to results
-      navigate(`/test-details/${testId}`);
+      console.log('Test finalized successfully:', finalizeData);
+
+      // Update the navigation path to match App.js route
+      navigate(`/test-solution/${testId}/${testAttemptId}`);
     } catch (error) {
-      console.error('Error finishing test:', error);
-      alert('Failed to submit test. Please try again.');
+      console.error('Detailed error in handleFinishTest:', error);
+      alert(`Failed to submit test: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }

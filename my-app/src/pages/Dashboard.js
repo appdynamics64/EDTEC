@@ -128,6 +128,7 @@ const Dashboard = () => {
             )
           `)
           .eq('exam_id', profileData.selected_exam_id)
+          .eq('test_attempts.user_id', user.id)
           .order('created_at', { ascending: true });
 
         if (testsError) throw testsError;
@@ -196,6 +197,7 @@ const Dashboard = () => {
               created_at
             )
           `)
+          .eq('test_attempts.user_id', user.id)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
