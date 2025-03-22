@@ -46,6 +46,20 @@ const getStatusStyle = (status) => {
   }
 };
 
+const ProgressSummary = ({ totalQuestions, answeredQuestions }) => (
+  <div style={styles.progressSummary}>
+    <span>Progress: {answeredQuestions} / {totalQuestions}</span>
+    <div style={styles.progressBar}>
+      <div 
+        style={{
+          ...styles.progressFill,
+          width: `${(answeredQuestions / totalQuestions) * 100}%`
+        }}
+      />
+    </div>
+  </div>
+);
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -751,6 +765,26 @@ const styles = {
     '&:hover': {
       backgroundColor: '#2563eb',
     },
+  },
+  progressSummary: {
+    padding: '10px 15px',
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    marginBottom: '10px',
+    fontSize: '14px',
+    color: '#666',
+  },
+  progressBar: {
+    height: '4px',
+    backgroundColor: '#f1f1f1',
+    borderRadius: '2px',
+    marginTop: '8px',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#4caf50',
+    borderRadius: '2px',
+    transition: 'width 0.3s ease',
   },
 };
 

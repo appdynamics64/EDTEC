@@ -4,6 +4,53 @@ import { supabase } from '../config/supabaseClient';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 
+const QuestionNavigator = ({ 
+  totalQuestions, 
+  currentQuestion, 
+  onQuestionSelect,
+  selectedAnswers,
+  questions
+}) => {
+  const scrollRef = React.useRef(null);
+
+  // Scroll to the current question when it changes
+  React.useEffect(() => {
+    if (scrollRef.current) {
+      const button = scrollRef.current.children[currentQuestion];
+      if (button) {
+        button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }
+  }, [currentQuestion]);
+
+  // Simplified check for question status
+  const isQuestionAnswered = (questionIndex) => {
+    const question = questions[questionIndex];
+    return selectedAnswers[question?.id] !== undefined;
+  };
+
+  return (
+    <div style={styles.navigatorContainer}>
+      <div style={styles.navigatorScroll} ref={scrollRef}>
+        {Array.from({ length: totalQuestions }, (_, index) => (
+          <button
+            key={index}
+            onClick={() => onQuestionSelect(index)}
+            style={{
+              ...styles.questionNumber,
+              ...(currentQuestion === index && styles.currentQuestion),
+              ...(isQuestionAnswered(index) && styles.answeredQuestion),
+              ...(currentQuestion === index && isQuestionAnswered(index) && styles.currentAnsweredQuestion)
+            }}
+          >
+            {index + 1}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const TestScreen = () => {
   const navigate = useNavigate();
   const { testId } = useParams();
@@ -17,6 +64,7 @@ const TestScreen = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [testAttemptId, setTestAttemptId] = useState(null);
   const [testDetails, setTestDetails] = useState(null);
+  const [lastAttemptedQuestion, setLastAttemptedQuestion] = useState(0);
 
   useEffect(() => {
     const initializeTest = async () => {
@@ -165,23 +213,40 @@ const TestScreen = () => {
           order: q.question_order
         }));
 
-        setQuestions(formattedQuestions);
-
         // 6. Load existing answers if any
         if (attemptId) {
-          const { data: existingAnswers } = await supabase
+          const { data: existingAnswers, error: answersError } = await supabase
             .from('test_attempt_answers')
-            .select('question_id, selected_option_id')
-            .eq('test_attempt_id', attemptId);
+            .select('question_id, selected_option_id, updated_at')
+            .eq('test_attempt_id', attemptId)
+            .order('updated_at', { ascending: false });
 
-          if (existingAnswers) {
+          if (answersError) throw answersError;
+
+          if (existingAnswers && existingAnswers.length > 0) {
+            // Create answers map
             const answersMap = {};
             existingAnswers.forEach(answer => {
               answersMap[answer.question_id] = answer.selected_option_id;
             });
             setSelectedAnswers(answersMap);
+
+            // Get the most recently modified question (first in the array due to descending order)
+            const lastModifiedAnswer = existingAnswers[0];
+            
+            // Find the index of the last modified question in the questions array
+            const questionIndex = formattedQuestions.findIndex(
+              q => q.id === lastModifiedAnswer.question_id
+            );
+
+            if (questionIndex !== -1) {
+              console.log('Setting current question to last modified:', questionIndex);
+              setCurrentQuestion(questionIndex);
+            }
           }
         }
+
+        setQuestions(formattedQuestions);
 
       } catch (error) {
         console.error('Detailed error:', error);
@@ -247,37 +312,57 @@ const TestScreen = () => {
         .find(o => o.id === optionId)
         ?.is_correct || false;
 
-      // Call the upsert function
-      const { data, error } = await supabase.rpc('upsert_test_attempt_answer', {
-        p_test_attempt_id: testAttemptId,
-        p_question_id: questionId,
-        p_selected_option_id: optionId,
-        p_is_correct: isCorrect
-      });
+      // First check if an answer already exists
+      const { data: existingAnswer, error: checkError } = await supabase
+        .from('test_attempt_answers')
+        .select('id')
+        .eq('test_attempt_id', testAttemptId)
+        .eq('question_id', questionId)
+        .single();
 
-      if (error) {
-        console.error('Error saving answer:', error);
-        // Revert the optimistic update if there's an error
-        setSelectedAnswers(prev => {
-          const newAnswers = { ...prev };
-          delete newAnswers[questionId];
-          return newAnswers;
-        });
-        alert('Failed to save your answer. Please try again.');
-        throw error;
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "no rows found"
+        throw checkError;
       }
 
-      console.log('Answer saved successfully:', data);
+      let result;
+      if (existingAnswer) {
+        // Update existing answer
+        result = await supabase
+          .from('test_attempt_answers')
+          .update({
+            selected_option_id: optionId,
+            is_correct: isCorrect
+          })
+          .eq('id', existingAnswer.id)
+          .select();
+      } else {
+        // Insert new answer
+        result = await supabase
+          .from('test_attempt_answers')
+          .insert({
+            test_attempt_id: testAttemptId,
+            question_id: questionId,
+            selected_option_id: optionId,
+            is_correct: isCorrect
+          })
+          .select();
+      }
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      console.log('Answer saved successfully:', result.data);
 
     } catch (error) {
       console.error('Detailed error:', error);
-      // Log the current state for debugging
-      console.log('Current state:', {
-        testAttemptId,
-        questions,
-        selectedAnswers
+      // Revert the optimistic update if there's an error
+      setSelectedAnswers(prev => {
+        const newAnswers = { ...prev };
+        delete newAnswers[questionId];
+        return newAnswers;
       });
-      alert('There was a problem saving your answer. Please try again.');
+      alert('Failed to save your answer. Please try again.');
     }
   };
 
@@ -366,6 +451,17 @@ const TestScreen = () => {
         </button>
       </div>
 
+      {/* Add the Question Navigator here */}
+      {!loading && questions.length > 0 && (
+        <QuestionNavigator
+          totalQuestions={questions.length}
+          currentQuestion={currentQuestion}
+          onQuestionSelect={setCurrentQuestion}
+          selectedAnswers={selectedAnswers}
+          questions={questions}
+        />
+      )}
+
       {/* Question Display */}
       {!loading && questions.length > 0 && (
         <div style={styles.questionContainer}>
@@ -424,6 +520,9 @@ const styles = {
     padding: '20px',
     maxWidth: '800px',
     margin: '0 auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
   },
   header: {
     display: 'flex',
@@ -510,6 +609,70 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '16px',
+  },
+  navigatorContainer: {
+    backgroundColor: 'white',
+    padding: '15px',
+    marginBottom: '20px',
+    borderRadius: '8px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  navigatorScroll: {
+    display: 'flex',
+    overflowX: 'auto',
+    gap: '8px',
+    padding: '5px',
+    scrollBehavior: 'smooth',
+    '-webkit-overflow-scrolling': 'touch',
+    '&::-webkit-scrollbar': {
+      height: '6px',
+    },
+    '&::-webkit-scrollbar-track': {
+      background: '#f1f1f1',
+      borderRadius: '3px',
+    },
+    '&::-webkit-scrollbar-thumb': {
+      background: '#888',
+      borderRadius: '3px',
+    },
+    '&::-webkit-scrollbar-thumb:hover': {
+      background: '#555',
+    },
+  },
+  questionNumber: {
+    minWidth: '40px',
+    height: '40px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    backgroundColor: 'white',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#666',
+    transition: 'all 0.2s ease',
+    '&:hover': {
+      backgroundColor: '#f8f9fa',
+      borderColor: '#adb5bd',
+    },
+  },
+  currentQuestion: {
+    backgroundColor: '#e3f2fd',
+    borderColor: '#2196f3',
+    color: '#2196f3',
+    fontWeight: '600',
+  },
+  answeredQuestion: {
+    backgroundColor: '#e8f5e9',
+    borderColor: '#4caf50',
+    color: '#4caf50',
+  },
+  currentAnsweredQuestion: {
+    backgroundColor: '#4caf50',
+    borderColor: '#4caf50',
+    color: 'white',
   },
 };
 

@@ -137,6 +137,7 @@ const TestDetails = () => {
 
   const handleStartTest = async () => {
     try {
+      console.log('Starting test check...');
       // Check for in-progress attempts
       const { data: activeAttempt, error } = await supabase
         .from('test_attempts')
@@ -146,15 +147,20 @@ const TestDetails = () => {
         .is('end_time', null)
         .single();
 
+      console.log('Active attempt:', activeAttempt);
+      console.log('Error:', error);
+
       if (error && error.code !== 'PGRST116') { // PGRST116 is the "no rows returned" error
         throw error;
       }
 
       if (activeAttempt) {
+        console.log('Found active attempt, showing modal');
         // There's an active attempt, show the confirmation modal
         setInProgressAttempt(activeAttempt);
         setShowConfirmModal(true);
       } else {
+        console.log('No active attempt, creating new one');
         // No active attempt, create a new one before navigating
         const { data: newAttempt, error: createError } = await supabase
           .rpc('create_test_attempt', {
@@ -174,7 +180,7 @@ const TestDetails = () => {
   };
 
   const handleViewSolutions = () => {
-    navigate(`/test/${testId}/solutions/${lastAttempt.id}`);
+    navigate(`/test-solution/${testId}/${lastAttempt.id}`);
   };
 
   const handleContinueTest = () => {
@@ -323,19 +329,19 @@ const ConfirmationModal = ({ isOpen, onClose, onContinue, onStartNew }) => {
         <div style={modalStyles.buttons}>
           <button 
             onClick={onContinue}
-            style={{...modalStyles.button, ...modalStyles.continueButton}}
+            style={modalStyles.continueButton}
           >
             Continue Test
           </button>
           <button 
             onClick={onStartNew}
-            style={{...modalStyles.button, ...modalStyles.newButton}}
+            style={modalStyles.newButton}
           >
             Start New Test
           </button>
           <button 
             onClick={onClose}
-            style={{...modalStyles.button, ...modalStyles.cancelButton}}
+            style={modalStyles.cancelButton}
           >
             Cancel
           </button>
@@ -500,7 +506,7 @@ const modalStyles = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1000,
+    zIndex: 9999,
   },
   modal: {
     backgroundColor: 'white',
@@ -509,47 +515,64 @@ const modalStyles = {
     width: '90%',
     maxWidth: '500px',
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+    position: 'relative',
+    zIndex: 10000,
   },
   title: {
     margin: '0 0 16px 0',
     fontSize: '1.5rem',
     fontWeight: '600',
+    color: '#1a202c',
   },
   message: {
     marginBottom: '24px',
     fontSize: '1rem',
     color: '#4B5563',
+    lineHeight: '1.5',
   },
   buttons: {
     display: 'flex',
     gap: '12px',
     justifyContent: 'flex-end',
   },
-  button: {
+  continueButton: {
     padding: '8px 16px',
-    borderRadius: '6px',
+    backgroundColor: '#10B981',
+    color: 'white',
     border: 'none',
+    borderRadius: '6px',
     fontSize: '0.875rem',
     fontWeight: '500',
     cursor: 'pointer',
-  },
-  continueButton: {
-    backgroundColor: '#10B981',
-    color: 'white',
+    transition: 'background-color 0.2s',
     '&:hover': {
       backgroundColor: '#059669',
     },
   },
   newButton: {
+    padding: '8px 16px',
     backgroundColor: '#EF4444',
     color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
     '&:hover': {
       backgroundColor: '#DC2626',
     },
   },
   cancelButton: {
+    padding: '8px 16px',
     backgroundColor: '#6B7280',
     color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
     '&:hover': {
       backgroundColor: '#4B5563',
     },
