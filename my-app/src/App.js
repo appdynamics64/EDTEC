@@ -113,6 +113,16 @@ function App() {
           } 
         />
 
+        {/* Add this route for TestSolution */}
+        <Route 
+          path="/test-solution/:testId/:attemptId" 
+          element={
+            <PrivateRoute>
+              <TestSolution />
+            </PrivateRoute>
+          }
+        />
+
         {/* Default route */}
         <Route 
           path="*" 
