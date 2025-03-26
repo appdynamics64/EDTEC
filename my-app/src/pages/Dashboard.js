@@ -74,6 +74,7 @@ const Dashboard = () => {
   const [userTests, setUserTests] = useState([]);
   const [availableExams, setAvailableExams] = useState([]);
   const [isChangingExam, setIsChangingExam] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
 
   // Filter tests based on activeFilter
   const filteredTests = tests.filter(test => {
@@ -275,6 +276,31 @@ const Dashboard = () => {
     }
   }, [user]);
 
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        if (user) {
+          const { data: profileData, error } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+          
+          if (error) {
+            console.error('Error fetching user profile:', error);
+            return;
+          }
+          
+          setUserProfile(profileData);
+        }
+      } catch (error) {
+        console.error('Error in profile fetch:', error);
+      }
+    };
+    
+    fetchUserProfile();
+  }, [user]);
+
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -466,12 +492,14 @@ const Dashboard = () => {
             </div>
                     )}
           </div>
-          <div style={styles.adminButton}>
-            <button onClick={handleAdminClick}>
-              <FaUserCog style={{ marginRight: '8px' }} />
-              Admin Console
-            </button>
-          </div>
+          {userProfile?.role === 'admin' && (
+            <div style={styles.adminButton}>
+              <button onClick={handleAdminClick}>
+                <FaUserCog style={{ marginRight: '8px' }} />
+                Admin Console
+              </button>
+            </div>
+          )}
       </header>
 
       {/* Exam Header */}
