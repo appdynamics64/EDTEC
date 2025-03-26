@@ -15,6 +15,7 @@ import TestScreen from './pages/TestScreen';
 import TestSolution from './pages/TestSolution';
 import AdminConsole from './pages/AdminConsole';
 import PrivateRoute from './components/PrivateRoute';
+import Chatbot from './pages/Chatbot';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
@@ -119,6 +120,16 @@ function App() {
           element={
             <PrivateRoute>
               <TestSolution />
+            </PrivateRoute>
+          }
+        />
+
+        {/* Add this route for Chatbot */}
+        <Route 
+          path="/chatbot" 
+          element={
+            <PrivateRoute>
+              <Chatbot />
             </PrivateRoute>
           }
         />

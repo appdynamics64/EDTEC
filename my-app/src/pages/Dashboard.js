@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 import ProfileModal from '../components/ProfileModal';
-import { FaUserCog, FaCheckCircle, FaClock, FaChartLine, FaTrophy } from 'react-icons/fa';
+import { FaUserCog, FaCheckCircle, FaClock, FaChartLine, FaTrophy, FaComments } from 'react-icons/fa';
 
 // Add this colors object at the top of the file, after the imports
 const colors = {
@@ -90,6 +90,7 @@ const Dashboard = () => {
   const [userTests, setUserTests] = useState([]);
   const [availableExams, setAvailableExams] = useState([]);
   const [isChangingExam, setIsChangingExam] = useState(false);
+  const [showChatbot, setShowChatbot] = useState(false);
 
   // Filter tests based on activeFilter
   const filteredTests = tests.filter(test => {
@@ -579,6 +580,17 @@ const Dashboard = () => {
         </button>
       </footer>
 
+      {/* Chatbot Button */}
+      <div style={styles.chatbotButton}>
+        <button
+          onClick={() => navigate('/chatbot')}
+          style={styles.chatButton}
+          aria-label="Chat with AI assistant"
+        >
+          <FaComments size={24} />
+        </button>
+      </div>
+      
       {/* Existing modals */}
       {showProfileModal && (
         <ProfileModal
@@ -1003,6 +1015,118 @@ const styles = {
     fontSize: '0.875rem',
     '&:hover': {
       backgroundColor: '#f3f4f6',
+    },
+  },
+  chatbotButton: {
+    position: 'fixed',
+    bottom: '30px',
+    right: '30px',
+    zIndex: 1000,
+  },
+  chatButton: {
+    width: '60px',
+    height: '60px',
+    borderRadius: '50%',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    boxShadow: '0 4px 10px rgba(0, 0, 0, 0.2)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'transform 0.2s ease, background-color 0.2s ease',
+    '&:hover': {
+      transform: 'scale(1.05)',
+      backgroundColor: '#2563eb',
+    },
+    '&:active': {
+      transform: 'scale(0.95)',
+    },
+  },
+  chatbotContainer: {
+    position: 'fixed',
+    bottom: '100px',
+    right: '30px',
+    width: '350px',
+    height: '450px',
+    backgroundColor: 'white',
+    borderRadius: '12px',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    zIndex: 1000,
+  },
+  chatHeader: {
+    padding: '16px',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  chatTitle: {
+    margin: 0,
+    fontSize: '18px',
+    fontWeight: '600',
+  },
+  chatCloseButton: {
+    background: 'none',
+    border: 'none',
+    color: 'white',
+    fontSize: '24px',
+    cursor: 'pointer',
+    padding: '0 8px',
+    lineHeight: '1',
+  },
+  chatMessages: {
+    flex: 1,
+    padding: '16px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  chatMessage: {
+    maxWidth: '80%',
+    alignSelf: 'flex-start',
+    backgroundColor: '#f3f4f6',
+    borderRadius: '12px',
+    padding: '12px 16px',
+  },
+  chatMessageText: {
+    margin: 0,
+    fontSize: '14px',
+    lineHeight: '1.4',
+  },
+  chatInputContainer: {
+    display: 'flex',
+    padding: '16px',
+    borderTop: '1px solid #e5e7eb',
+  },
+  chatInput: {
+    flex: 1,
+    padding: '10px 14px',
+    border: '1px solid #d1d5db',
+    borderRadius: '20px',
+    fontSize: '14px',
+    outline: 'none',
+    '&:focus': {
+      borderColor: '#3b82f6',
+    },
+  },
+  chatSendButton: {
+    marginLeft: '8px',
+    padding: '8px 16px',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '20px',
+    fontSize: '14px',
+    cursor: 'pointer',
+    '&:hover': {
+      backgroundColor: '#2563eb',
     },
   },
 };
