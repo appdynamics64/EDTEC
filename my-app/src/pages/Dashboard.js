@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 import ProfileModal from '../components/ProfileModal';
-import { FaUserCog } from 'react-icons/fa';
+import { FaUserCog, FaCheckCircle, FaClock, FaChartLine, FaTrophy } from 'react-icons/fa';
 
 // Add this colors object at the top of the file, after the imports
 const colors = {
@@ -60,6 +60,22 @@ const ProgressSummary = ({ totalQuestions, answeredQuestions }) => (
   </div>
 );
 
+const StatisticsCard = ({ icon: Icon, title, value, subtext, color }) => (
+  <div style={{
+    ...styles.statsCard,
+    borderLeft: `4px solid ${color}`
+  }}>
+    <div style={styles.statsIconWrapper}>
+      <Icon size={24} color={color} />
+    </div>
+    <div style={styles.statsContent}>
+      <h3 style={styles.statsValue}>{value}</h3>
+      <span style={styles.statsTitle}>{title}</span>
+      {subtext && <p style={styles.statsSubtext}>{subtext}</p>}
+    </div>
+  </div>
+);
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -74,17 +90,12 @@ const Dashboard = () => {
   const [userTests, setUserTests] = useState([]);
   const [availableExams, setAvailableExams] = useState([]);
   const [isChangingExam, setIsChangingExam] = useState(false);
-  const [userProfile, setUserProfile] = useState(null);
 
   // Filter tests based on activeFilter
   const filteredTests = tests.filter(test => {
     switch (activeFilter) {
       case 'completed':
         return test.user_test_progress.status === 'completed';
-      case 'recommended':
-        return test.type === 'recommended';
-      case 'custom':
-        return test.type === 'custom';
       default:
         return true; // 'all' filter
     }
@@ -276,31 +287,6 @@ const Dashboard = () => {
     }
   }, [user]);
 
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      try {
-        if (user) {
-          const { data: profileData, error } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-          
-          if (error) {
-            console.error('Error fetching user profile:', error);
-            return;
-          }
-          
-          setUserProfile(profileData);
-        }
-      } catch (error) {
-        console.error('Error in profile fetch:', error);
-      }
-    };
-    
-    fetchUserProfile();
-  }, [user]);
-
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -354,11 +340,7 @@ const Dashboard = () => {
         <div style={styles.infoItem}>
           <span>Duration:</span>
           <span>{test.test_duration} minutes</span>
-            </div>
-        <div style={styles.infoItem}>
-          <span>Type:</span>
-          <span style={styles.testType}>{test.type}</span>
-                  </div>
+        </div>
         <div style={styles.infoItem}>
           <span>Status:</span>
           <span style={getStatusStyle(test.user_test_progress.status)}>
@@ -370,10 +352,10 @@ const Dashboard = () => {
               : test.user_test_progress.status === 'in_progress'
               ? 'In Progress'
               : 'Not Started'}
-                </span>
-                  </div>
-                </div>
-              <button 
+          </span>
+        </div>
+      </div>
+      <button 
         style={{
           ...styles.startButton,
           ...(test.user_test_progress.status === 'completed' && styles.viewDetailsButton)
@@ -388,8 +370,8 @@ const Dashboard = () => {
           : test.user_test_progress.status === 'in_progress'
           ? 'Continue'
           : 'Start Test'}
-              </button>
-                </div>
+      </button>
+    </div>
   );
 
   const handleExamChange = async (newExamId) => {
@@ -446,6 +428,55 @@ const Dashboard = () => {
     navigate('/admin');
   };
 
+  const renderStatistics = () => {
+    // Calculate statistics from tests array
+    const totalTests = tests.length;
+    const completedTests = tests.filter(test => 
+      test.user_test_progress.status === 'completed'
+    ).length;
+    
+    // Calculate average score from completed tests
+    const completedTestScores = tests
+      .filter(test => test.user_test_progress.status === 'completed')
+      .map(test => Number(test.user_test_progress.attempt?.final_score) || 0);
+    
+    const averageScore = completedTestScores.length 
+      ? (completedTestScores.reduce((a, b) => a + b, 0) / completedTestScores.length).toFixed(1)
+      : 0;
+
+    // Find best score
+    const bestScore = Math.max(...completedTestScores, 0).toFixed(1);
+
+    return (
+      <div style={styles.statisticsContainer}>
+        <h2 style={styles.statisticsTitle}>Your Progress Overview</h2>
+        <div style={styles.statisticsGrid}>
+          <StatisticsCard
+            icon={FaCheckCircle}
+            title="Tests Completed"
+            value={`${completedTests}/${totalTests}`}
+            subtext="Keep going!"
+            color="#4CAF50"
+          />
+          <StatisticsCard
+            icon={FaChartLine}
+            title="Average Score"
+            value={`${averageScore}%`}
+            subtext={averageScore > 70 ? "Excellent work!" : "Room for improvement"}
+            color="#2196F3"
+          />
+          <StatisticsCard
+            icon={FaTrophy}
+            title="Best Score"
+            value={`${bestScore}%`}
+            subtext="Your highest achievement"
+            color="#FFC107"
+          />
+        </div>
+      </div>
+    );
+  };
+
   if (loading) return <LoadingScreen />;
   if (error) return (
     <div style={styles.errorContainer}>
@@ -459,8 +490,22 @@ const Dashboard = () => {
 
   return (
     <div style={styles.container}>
-      {/* Header with Profile */}
-      <header style={styles.header}>
+      {/* New Navigation Bar */}
+      <nav style={styles.navbar}>
+        <div style={styles.navLeft}>
+          <div style={styles.logo}>
+            PREP<span style={styles.logoHighlight}>HUB</span>
+          </div>
+          <div style={styles.examSelector}>
+            <span style={styles.examName}>{selectedExam?.exam_name}</span>
+            <button 
+              onClick={() => setIsChangingExam(true)}
+              style={styles.changeExamButtonSmall}
+            >
+              Change
+            </button>
+          </div>
+        </div>
         <div style={styles.userProfile}>
           <div 
             style={styles.profileSection} 
@@ -476,80 +521,76 @@ const Dashboard = () => {
             <div style={styles.profileMenu}>
               <button 
                 style={styles.menuItem}
-            onClick={() => {
+                onClick={() => {
                   setShowProfileModal(true);
                   setShowProfileMenu(false);
                 }}
               >
                 Edit Profile
-            </button>
-                <button 
+              </button>
+              <button 
                 style={styles.menuItem}
                 onClick={handleLogout}
               >
                 Logout
-                </button>
-            </div>
-                    )}
-          </div>
-          {userProfile?.role === 'admin' && (
-            <div style={styles.adminButton}>
-              <button onClick={handleAdminClick}>
-                <FaUserCog style={{ marginRight: '8px' }} />
-                Admin Console
               </button>
             </div>
           )}
-      </header>
+        </div>
+      </nav>
 
-      {/* Exam Header */}
-      <div style={styles.examHeader}>
-        <div style={styles.examTitleContainer}>
-          <h1>{selectedExam?.exam_name}</h1>
-              <button 
-            onClick={() => setIsChangingExam(true)}
-            style={styles.changeExamButton}
-          >
-            Change Exam
-              </button>
-            </div>
-        <p>Prepare for your success</p>
-                  </div>
-                  
-      {/* Test Filters */}
-      <div style={styles.filters}>
-        {['all', 'completed', 'recommended', 'custom'].map(filter => (
-          <button
-            key={filter}
-                          style={{
-              ...styles.filterButton,
-              ...(activeFilter === filter && styles.activeFilter)
-            }}
-            onClick={() => setActiveFilter(filter)}
-          >
-            {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                      </button>
+      {/* Main Content */}
+      <main style={styles.mainContent}>
+        {renderStatistics()}
+        
+        <div style={styles.sectionContainer}>
+          <div style={styles.sectionHeader}>
+            <h2 style={styles.sectionTitle}>Practice Tests</h2>
+            <div style={styles.filters}>
+              {['all', 'completed'].map(filter => (
+                <button
+                  key={filter}
+                  style={{
+                    ...styles.filterButton,
+                    ...(activeFilter === filter && styles.activeFilter)
+                  }}
+                  onClick={() => setActiveFilter(filter)}
+                >
+                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                </button>
               ))}
             </div>
+          </div>
 
-      {/* Tests Grid */}
-      <div style={styles.testGrid}>
-        {filteredTests.map(test => renderTestCard(test))}
-      </div>
+          <div style={styles.testGrid}>
+            {filteredTests.map(test => renderTestCard(test))}
+          </div>
+        </div>
+      </main>
 
-      {/* Profile Modal */}
+      {/* Admin Console Link at Bottom */}
+      <footer style={styles.footer}>
+        <button 
+          onClick={handleAdminClick}
+          style={styles.adminLink}
+        >
+          <FaUserCog style={{ marginRight: '8px' }} />
+          Admin Console
+        </button>
+      </footer>
+
+      {/* Existing modals */}
       {showProfileModal && (
-      <ProfileModal
+        <ProfileModal
           isOpen={showProfileModal}
           onClose={() => setShowProfileModal(false)}
-        userData={{
-          ...userData,
-          email: user.email
-        }}
+          userData={{
+            ...userData,
+            email: user.email
+          }}
         />
       )}
 
-      {/* Add the ExamSelector modal */}
       {isChangingExam && (
         <ExamSelector
           currentExam={selectedExam}
@@ -570,6 +611,10 @@ const styles = {
     padding: '20px',
     maxWidth: '1200px',
     margin: '0 auto',
+    minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    padding: 0,
   },
   examHeader: {
     textAlign: 'center',
@@ -813,6 +858,152 @@ const styles = {
     backgroundColor: '#4caf50',
     borderRadius: '2px',
     transition: 'width 0.3s ease',
+  },
+  statisticsContainer: {
+    marginBottom: '40px',
+    backgroundColor: '#f8fafc',
+    padding: '24px',
+    borderRadius: '12px',
+  },
+  statisticsTitle: {
+    fontSize: '1.5rem',
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: '20px',
+    textAlign: 'left',
+  },
+  statisticsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+    gap: '20px',
+  },
+  statsCard: {
+    backgroundColor: 'white',
+    padding: '20px',
+    borderRadius: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    transition: 'transform 0.2s ease',
+    cursor: 'default',
+    '&:hover': {
+      transform: 'translateY(-2px)',
+    },
+  },
+  statsIconWrapper: {
+    padding: '12px',
+    borderRadius: '8px',
+    backgroundColor: '#f8fafc',
+  },
+  statsContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  statsValue: {
+    fontSize: '1.5rem',
+    fontWeight: '700',
+    color: '#1e293b',
+    margin: 0,
+  },
+  statsTitle: {
+    fontSize: '0.875rem',
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  statsSubtext: {
+    fontSize: '0.75rem',
+    color: '#94a3b8',
+    margin: '4px 0 0 0',
+  },
+  navbar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px 24px',
+    backgroundColor: 'white',
+    borderBottom: '1px solid #e5e7eb',
+    position: 'sticky',
+    top: 0,
+    zIndex: 100,
+  },
+  navLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '24px',
+  },
+  logo: {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  logoHighlight: {
+    color: '#3b82f6',
+  },
+  examSelector: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  examName: {
+    fontSize: '16px',
+    fontWeight: '500',
+    color: '#4b5563',
+  },
+  changeExamButtonSmall: {
+    padding: '4px 8px',
+    backgroundColor: '#f3f4f6',
+    color: '#4b5563',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '0.875rem',
+    cursor: 'pointer',
+    '&:hover': {
+      backgroundColor: '#e5e7eb',
+    },
+  },
+  mainContent: {
+    padding: '24px',
+  },
+  sectionContainer: {
+    backgroundColor: 'white',
+    borderRadius: '12px',
+    padding: '24px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+  },
+  sectionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+    gap: '16px',
+  },
+  sectionTitle: {
+    fontSize: '1.5rem',
+    fontWeight: '600',
+    color: '#1e293b',
+    margin: 0,
+  },
+  footer: {
+    borderTop: '1px solid #e5e7eb',
+    padding: '16px 24px',
+    marginTop: 'auto',
+  },
+  adminLink: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '8px 16px',
+    backgroundColor: 'transparent',
+    color: '#4b5563',
+    border: '1px solid #e5e7eb',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    '&:hover': {
+      backgroundColor: '#f3f4f6',
+    },
   },
 };
 
