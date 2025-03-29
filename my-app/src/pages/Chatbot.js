@@ -7,6 +7,8 @@ import typography from '../styles/foundation/typography';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 
+const MAX_MESSAGES = 100; // Limit the number of messages to prevent excessive memory usage
+
 const Chatbot = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -35,21 +37,50 @@ const Chatbot = () => {
     
     // Add user message
     const userMessage = { type: 'user', text: inputText };
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => {
+      const newMessages = [...prev, userMessage];
+      return newMessages.length > MAX_MESSAGES ? newMessages.slice(-MAX_MESSAGES) : newMessages;
+    });
     setInputText('');
     
     // Set loading state
     setLoading(true);
     
-    // Simulate bot response (replace with actual API call later)
-    setTimeout(() => {
+    try {
+      // Call backend API
+      const response = await fetch('http://localhost:5000/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: inputText }),
+      });
+
+      // Check if the response is not OK (status code outside 200-299)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Parse the JSON response
+      const data = await response.json();
+
+      // Extract the message from the response
       const botResponse = { 
         type: 'bot', 
-        text: `I understand you're asking about "${inputText}". This is where the AI would provide a helpful response based on your question.`
+        text: data.message // Correctly read from the JSON response
       };
-      setMessages(prev => [...prev, botResponse]);
+
+      // Add bot response to messages
+      setMessages(prev => {
+        const newMessages = [...prev, botResponse];
+        return newMessages.length > MAX_MESSAGES ? newMessages.slice(-MAX_MESSAGES) : newMessages;
+      });
+    } catch (error) {
+      console.error('Error fetching response from backend:', error);
+      setMessages(prev => [...prev, { type: 'bot', text: 'Sorry, I am unable to process your request at the moment.' }]);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -65,7 +96,7 @@ const Chatbot = () => {
         <MessageList>
           {messages.map((message, index) => (
             <MessageBubble key={index} isUser={message.type === 'user'}>
-              {message.text}
+              {message.text || 'No content available'} {/* Fallback for empty content */}
             </MessageBubble>
           ))}
           {loading && (
