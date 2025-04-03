@@ -182,22 +182,31 @@ const Chatbot = () => {
     setInputText('');
     
     // Save user message to the database
-    saveMessageToDatabase(userMessage.text, true);
+    await saveMessageToDatabase(userMessage.text, true);
 
     // Set loading state
     setLoading(true);
     
     try {
-      // Call backend API
-      const response = await fetch('http://localhost:5000/api/chat-messages', {
+      // Get the session and access token
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        throw new Error('Failed to retrieve session or session is null');
+      }
+
+      const authToken = session.access_token; // Get the auth token
+
+      // Call backend API with auth token
+      const response = await fetch('http://localhost:5000/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}` // Include the auth token
         },
         body: JSON.stringify({ prompt: inputText }),
       });
 
-      // Check if the response is not OK (status code outside 200-299)
+      // Check if the response is not OK
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -208,7 +217,7 @@ const Chatbot = () => {
       // Extract the message from the response
       const botResponse = { 
         type: 'bot', 
-        text: data.message // Correctly read from the JSON response
+        text: data.message
       };
 
       // Add bot response to messages
@@ -218,10 +227,13 @@ const Chatbot = () => {
       });
 
       // Save bot response to the database
-      saveMessageToDatabase(botResponse.text, false);
+      await saveMessageToDatabase(botResponse.text, false);
     } catch (error) {
       console.error('Error fetching response from backend:', error);
-      setMessages(prev => [...prev, { type: 'bot', text: 'Sorry, I am unable to process your request at the moment.' }]);
+      setMessages(prev => [...prev, { 
+        type: 'bot', 
+        text: 'Sorry, I am unable to process your request at the moment. Please check your connection or try again later.' 
+      }]);
     } finally {
       setLoading(false);
     }
@@ -285,9 +297,9 @@ const Chatbot = () => {
         {initialLoading ? (
           <LoadingContainer>
             <LoadingBubble>
-              <LoadingDot delay="0s" />
-              <LoadingDot delay="0.2s" />
-              <LoadingDot delay="0.4s" />
+              <LoadingDot $delay="0s" />
+              <LoadingDot $delay="0.2s" />
+              <LoadingDot $delay="0.4s" />
             </LoadingBubble>
             <LoadingText>Loading conversation history...</LoadingText>
           </LoadingContainer>
@@ -300,9 +312,9 @@ const Chatbot = () => {
             ))}
             {loading && (
               <LoadingBubble>
-                <LoadingDot delay="0s" />
-                <LoadingDot delay="0.2s" />
-                <LoadingDot delay="0.4s" />
+                <LoadingDot $delay="0s" />
+                <LoadingDot $delay="0.2s" />
+                <LoadingDot $delay="0.4s" />
               </LoadingBubble>
             )}
             <div ref={messagesEndRef} />
@@ -425,7 +437,7 @@ const LoadingDot = styled.div`
   border-radius: 50%;
   background-color: ${colors.brandPrimary || '#4f46e5'};
   animation: ${bounce} 1s infinite;
-  animation-delay: ${props => props.delay};
+  animation-delay: ${props => props.$delay};
 `;
 
 const InputForm = styled.form`

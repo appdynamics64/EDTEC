@@ -578,33 +578,25 @@ const AvatarPlaceholder = styled.div`
   font-weight: 600;
 `;
 
-const UploadStatus = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background-color: ${props => {
-    if (props.error) return '#FEF2F2';
-    if (props.success) return '#ECFDF5';
-    return '#F3F4F6';
-  }};
-  color: ${props => {
-    if (props.error) return '#DC2626';
-    if (props.success) return '#059669';
-    return '#6B7280';
-  }};
-  
-  .spinner {
-    animation: spin 1s linear infinite;
-  }
-  
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`;
+const UploadStatus = ({ success, error, children, ...rest }) => (
+  <div 
+    data-success={success ? "true" : undefined}
+    data-error={error ? "true" : undefined}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      marginTop: '12px',
+      padding: '8px 12px',
+      borderRadius: '6px',
+      backgroundColor: error ? '#FEF2F2' : success ? '#ECFDF5' : '#F3F4F6',
+      color: error ? '#DC2626' : success ? '#059669' : '#6B7280'
+    }}
+    {...rest}
+  >
+    {children}
+  </div>
+);
 
 const FormGroup = styled.div`
   margin-bottom: 20px;
@@ -650,41 +642,25 @@ const ModalFooter = styled.div`
   border-top: 1px solid ${colors.borderPrimary || '#e5e7eb'};
 `;
 
-const Button = styled.button`
-  padding: 10px 16px;
-  border-radius: 8px;
-  ${typography.textSmBold || 'font-size: 0.875rem; font-weight: 600;'};
-  cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  
-  background-color: ${props => {
-    if (props.disabled) return '#E5E7EB';
-    return props.primary ? colors.brandPrimary || '#4f46e5' : 'transparent';
-  }};
-  
-  color: ${props => {
-    if (props.disabled) return '#9CA3AF';
-    return props.primary ? 'white' : colors.textPrimary || '#1f2937';
-  }};
-  
-  border: ${props => props.secondary ? `1px solid ${colors.borderPrimary || '#e5e7eb'}` : 'none'};
-  
-  &:hover:not(:disabled) {
-    background-color: ${props => {
-      return props.primary ? colors.brandPrimaryDark || '#3c3599' : '#F3F4F6';
-    }};
-  }
-  
-  .spinner {
-    animation: spin 1s linear infinite;
-  }
-  
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`;
+const Button = ({ primary, secondary, disabled, children, ...rest }) => (
+  <button
+    disabled={disabled}
+    style={{
+      padding: '10px 16px',
+      borderRadius: '6px',
+      border: 'none',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      backgroundColor: primary ? colors.brandPrimary : secondary ? colors.backgroundSecondary : '#e5e7eb',
+      color: primary ? 'white' : colors.textPrimary,
+      fontWeight: '500',
+      fontSize: '0.875rem',
+      transition: 'background-color 0.2s',
+      opacity: disabled ? 0.7 : 1
+    }}
+    {...rest}
+  >
+    {children}
+  </button>
+);
 
 export default ProfileModal; 

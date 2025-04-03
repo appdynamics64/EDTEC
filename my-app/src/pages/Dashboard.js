@@ -62,6 +62,16 @@ const StatisticsCard = ({ icon: Icon, title, value, subtext, color }) => (
   </div>
 );
 
+const StatusBadge = ({ success, children, ...rest }) => (
+  <div 
+    className={success ? 'success-badge' : 'failure-badge'} 
+    data-success={success}
+    {...rest}
+  >
+    {children}
+  </div>
+);
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
