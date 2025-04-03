@@ -408,21 +408,26 @@ const AdminTopics = () => {
 
 // Styled Components
 const Container = styled.div`
-  padding: 24px;
+  padding: 32px;
   max-width: 1200px;
   margin: 0 auto;
+  background-color: #f9fafb;
+  min-height: 100vh;
 `;
 
 const Header = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 32px;
   
   h1 {
     ${typography.headingLg || 'font-size: 1.875rem; font-weight: 700;'};
     color: ${colors.textPrimary || '#1f2937'};
     margin: 0;
+    background: linear-gradient(90deg, ${colors.brandPrimary || '#4f46e5'} 0%, #6366f1 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 `;
 
@@ -430,18 +435,20 @@ const ActionButton = styled.button`
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  border-radius: 8px;
+  padding: 12px 20px;
+  border-radius: 10px;
   border: none;
   background-color: ${props => props.primary ? colors.brandPrimary || '#4f46e5' : 'white'};
   color: ${props => props.primary ? 'white' : colors.textPrimary || '#1f2937'};
   ${typography.textMdMedium || 'font-size: 1rem; font-weight: 500;'};
   cursor: pointer;
   transition: all 0.2s;
+  box-shadow: ${props => props.primary ? '0 4px 12px rgba(79, 70, 229, 0.2)' : '0 2px 6px rgba(0, 0, 0, 0.05)'};
   
   &:hover {
     background-color: ${props => props.primary ? colors.brandPrimaryDark || '#4338ca' : '#f9fafb'};
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: ${props => props.primary ? '0 6px 16px rgba(79, 70, 229, 0.3)' : '0 4px 8px rgba(0, 0, 0, 0.1)'};
   }
   
   &:active {
@@ -451,13 +458,14 @@ const ActionButton = styled.button`
 
 const FiltersContainer = styled.div`
   background-color: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  padding: 16px;
-  margin-bottom: 24px;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  padding: 20px;
+  margin-bottom: 32px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  gap: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.03);
 `;
 
 const FilterItem = styled.div`
@@ -571,22 +579,30 @@ const OrganizedView = styled.div`
 
 const SubjectSection = styled.div`
   background-color: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.03);
+  transition: transform 0.2s, box-shadow 0.2s;
+  
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  }
 `;
 
 const SubjectHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
-  background-color: ${colors.backgroundSecondary || '#f9fafb'};
+  padding: 20px 24px;
+  background: linear-gradient(to right, ${colors.backgroundSecondary || '#f9fafb'}, white);
   cursor: pointer;
   transition: background-color 0.2s;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.03);
   
   &:hover {
-    background-color: #f3f4f6;
+    background: linear-gradient(to right, #f3f4f6, white);
   }
 `;
 
@@ -605,9 +621,10 @@ const SubjectName = styled.h3`
 const TopicCount = styled.span`
   ${typography.textSmRegular || 'font-size: 0.875rem;'};
   color: ${colors.textSecondary || '#6b7280'};
-  background-color: #e5e7eb;
-  padding: 4px 8px;
-  border-radius: 16px;
+  background: linear-gradient(to right, #e5e7eb, #f3f4f6);
+  padding: 6px 10px;
+  border-radius: 20px;
+  font-weight: 500;
 `;
 
 const TopicsList = styled.div`
@@ -624,13 +641,13 @@ const TopicCard = styled.div`
   padding: 16px;
   background-color: white;
   border: 1px solid ${colors.borderPrimary || '#e5e7eb'};
-  border-radius: 8px;
+  border-radius: 12px;
   transition: all 0.2s;
   
   &:hover {
     border-color: ${colors.brandPrimary || '#4f46e5'};
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-3px);
   }
 `;
 
@@ -669,9 +686,9 @@ const TopicActions = styled.div`
 `;
 
 const ActionIcon = styled.button`
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -684,7 +701,8 @@ const ActionIcon = styled.button`
   &:hover {
     background-color: ${props => props.danger ? '#fecaca' : '#e5e7eb'};
     color: ${props => props.danger ? '#b91c1c' : colors.textPrimary || '#1f2937'};
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
   
   &:active {
@@ -721,13 +739,13 @@ const Modal = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(5px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 0.3s ease-out;
   
   @keyframes fadeIn {
     from { opacity: 0; }
@@ -737,15 +755,15 @@ const Modal = styled.div`
 
 const ModalContent = styled.div`
   background-color: white;
-  border-radius: 12px;
+  border-radius: 16px;
   width: 500px;
   max-width: 90%;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   overflow: hidden;
-  animation: slideUp 0.3s ease-out;
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   
   @keyframes slideUp {
-    from { transform: translateY(20px); opacity: 0; }
+    from { transform: translateY(30px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
   }
 `;
@@ -869,8 +887,8 @@ const ButtonGroup = styled.div`
 `;
 
 const Button = styled.button`
-  padding: 12px 20px;
-  border-radius: 8px;
+  padding: 12px 24px;
+  border-radius: 10px;
   border: none;
   background-color: ${props => props.primary ? colors.brandPrimary || '#4f46e5' : colors.backgroundSecondary || '#f3f4f6'};
   color: ${props => props.primary ? 'white' : colors.textPrimary || '#1f2937'};
@@ -881,11 +899,12 @@ const Button = styled.button`
   align-items: center;
   justify-content: center;
   gap: 8px;
+  box-shadow: ${props => props.primary ? '0 4px 12px rgba(79, 70, 229, 0.2)' : 'none'};
   
   &:hover {
     background-color: ${props => props.primary ? colors.brandPrimaryDark || '#4338ca' : '#e5e7eb'};
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transform: translateY(-2px);
+    box-shadow: ${props => props.primary ? '0 6px 16px rgba(79, 70, 229, 0.3)' : '0 2px 4px rgba(0, 0, 0, 0.05)'};
   }
   
   &:active {
