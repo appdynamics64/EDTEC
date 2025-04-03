@@ -15,6 +15,7 @@
     "express": "^4.17.1",
     "framer-motion": "^12.5.0",
     "openai": "^4.0.0",
+    "papaparse": "^5.5.2",
     "react": "^18.2.0",
     "react-bootstrap": "^2.10.9",
     "react-dom": "^18.2.0",
