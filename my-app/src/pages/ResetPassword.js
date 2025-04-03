@@ -34,47 +34,29 @@ const ResetPassword = () => {
     });
   };
 
-  const handleSubmit = async (e) => {
+  const handleResetPassword = async (e) => {
     e.preventDefault();
     
-    // Validate passwords
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords don't match");
       return;
     }
     
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-    
     try {
       setLoading(true);
-      setError(null);
       
-      // Update password
       const { error } = await supabase.auth.updateUser({
-        password: formData.password,
+        password: formData.password
       });
       
       if (error) throw error;
       
-      // Show success message
       setSuccess(true);
-      
-      // Clear form
-      setFormData({
-        password: '',
-        confirmPassword: '',
-      });
-      
-      // Redirect to login after 3 seconds
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
+      // Redirect to login after successful password reset
+      setTimeout(() => navigate('/login'), 3000);
     } catch (error) {
-      console.error('Reset password error:', error);
-      setError(error.message || 'Failed to reset password');
+      console.error('Error resetting password:', error);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -103,7 +85,7 @@ const ResetPassword = () => {
             </p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} style={styles.form}>
+          <form onSubmit={handleResetPassword} style={styles.form}>
             <p style={typography.textMdRegular}>
               Enter your new password below.
             </p>

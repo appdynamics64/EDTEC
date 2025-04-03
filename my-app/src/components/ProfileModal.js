@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../config/supabaseClient';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 import { FaCamera, FaSpinner, FaTimes, FaCheck, FaExclamationTriangle, FaUser } from 'react-icons/fa';

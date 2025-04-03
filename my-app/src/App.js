@@ -1,7 +1,15 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect, useRef } from 'react';
+import { 
+  BrowserRouter as Router, 
+  Routes, 
+  Route, 
+  Navigate,
+  createBrowserRouter,
+  RouterProvider
+} from 'react-router-dom';
 import { supabase } from './config/supabaseClient';
 import useAuth from './hooks/useAuth';
+import { routerOptions } from './config/routerConfig';
 
 // Import all components
 import Login from './pages/Login';
@@ -22,6 +30,26 @@ function App() {
   const [initializing, setInitializing] = React.useState(true);
   const [isOnboardingComplete, setIsOnboardingComplete] = React.useState(false);
   const [initialRoute, setInitialRoute] = React.useState(null);
+  const [router, setRouter] = React.useState(null);
+
+  // Instead, use a ref to ensure it only runs once
+  const supabaseInitialized = useRef(false);
+
+  useEffect(() => {
+    if (supabaseInitialized.current) return;
+    
+    console.log('Checking Supabase session in App component (once)');
+    const checkSession = async () => {
+      try {
+        await supabase.auth.getSession();
+      } catch (error) {
+        console.error('Error checking session:', error);
+      }
+    };
+    
+    checkSession();
+    supabaseInitialized.current = true;
+  }, []);
 
   React.useEffect(() => {
     const checkInitialState = async () => {
@@ -59,89 +87,87 @@ function App() {
     checkInitialState();
   }, [user, authLoading]);
 
+  // Create router after we have the user and onboarding status
+  React.useEffect(() => {
+    if (initializing || !initialRoute) return;
+
+    // Create the router with the current state
+    const newRouter = createBrowserRouter([
+      {
+        path: "/login",
+        element: <Login />
+      },
+      {
+        path: "/signup",
+        element: <Signup />
+      },
+      {
+        path: "/",
+        element: <PrivateRoute><Dashboard /></PrivateRoute>
+      },
+      {
+        path: "/test/:testId",
+        element: <PrivateRoute><TestScreen /></PrivateRoute>
+      },
+      {
+        path: "/test-details/:testId",
+        element: <PrivateRoute><TestDetails /></PrivateRoute>
+      },
+      {
+        path: "/test/:testId/take",
+        element: <PrivateRoute><TestScreen /></PrivateRoute>
+      },
+      {
+        path: "/reset-password",
+        element: <ResetPassword />
+      },
+      {
+        path: "/onboarding",
+        element: !user ? (
+          <Navigate to="/login" replace />
+        ) : isOnboardingComplete ? (
+          <Navigate to="/dashboard" replace />
+        ) : (
+          <ExamSelectionOnboarding />
+        )
+      },
+      {
+        path: "/dashboard",
+        element: !user ? (
+          <Navigate to="/login" replace />
+        ) : !isOnboardingComplete ? (
+          <Navigate to="/onboarding" replace />
+        ) : (
+          <Dashboard />
+        )
+      },
+      {
+        path: "/admin",
+        element: <PrivateRoute><AdminConsole /></PrivateRoute>
+      },
+      {
+        path: "/test-solution/:testId/:attemptId",
+        element: <PrivateRoute><TestSolution /></PrivateRoute>
+      },
+      {
+        path: "/chatbot",
+        element: <PrivateRoute><Chatbot /></PrivateRoute>
+      },
+      {
+        path: "*",
+        element: <Navigate to={initialRoute} replace />
+      }
+    ], routerOptions);
+
+    setRouter(newRouter);
+  }, [user, isOnboardingComplete, initialRoute, initializing]);
+
   // Show loading screen until auth is checked and initial route is determined
-  if (authLoading || initializing || !initialRoute) {
+  if (authLoading || initializing || !initialRoute || !router) {
     return <LoadingScreen />;
   }
 
-  return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-        <Route path="/test/:testId" element={<PrivateRoute><TestScreen /></PrivateRoute>} />
-        <Route path="/test-details/:testId" element={<PrivateRoute><TestDetails /></PrivateRoute>} />
-        <Route path="/test/:testId/take" element={<PrivateRoute><TestScreen /></PrivateRoute>} />
-
-        {/* Public routes */}
-        <Route path="/reset-password" element={<ResetPassword />} />
-
-        {/* Protected routes */}
-        <Route 
-          path="/onboarding" 
-          element={
-            !user ? (
-              <Navigate to="/login" replace />
-            ) : isOnboardingComplete ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <ExamSelectionOnboarding />
-            )
-          }
-        />
-        
-        <Route 
-          path="/dashboard" 
-          element={
-            !user ? (
-              <Navigate to="/login" replace />
-            ) : !isOnboardingComplete ? (
-              <Navigate to="/onboarding" replace />
-            ) : (
-              <Dashboard />
-            )
-          }
-        />
-
-        {/* Admin route */}
-        <Route 
-          path="/admin" 
-          element={
-            <PrivateRoute>
-              <AdminConsole />
-            </PrivateRoute>
-          } 
-        />
-
-        {/* Add this route for TestSolution */}
-        <Route 
-          path="/test-solution/:testId/:attemptId" 
-          element={
-            <PrivateRoute>
-              <TestSolution />
-            </PrivateRoute>
-          }
-        />
-
-        {/* Add this route for Chatbot */}
-        <Route 
-          path="/chatbot" 
-          element={
-            <PrivateRoute>
-              <Chatbot />
-            </PrivateRoute>
-          }
-        />
-
-        {/* Default route */}
-        <Route 
-          path="*" 
-          element={<Navigate to={initialRoute} replace />}
-        />
-      </Routes>
-    </Router>
-  );
+  return <RouterProvider router={router} />;
 }
 
 export default App;

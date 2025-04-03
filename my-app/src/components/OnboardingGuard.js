@@ -26,7 +26,14 @@ const OnboardingGuard = ({ children }) => {
 
         if (error) throw error;
 
-        setIsOnboardingComplete(Boolean(data?.name && data?.selected_exam_id));
+        const hasCompletedOnboarding = Boolean(data?.name && data?.selected_exam_id);
+        setIsOnboardingComplete(hasCompletedOnboarding);
+        
+        console.log('Onboarding status:', {
+          hasName: Boolean(data?.name),
+          hasExam: Boolean(data?.selected_exam_id),
+          isComplete: hasCompletedOnboarding
+        });
       } catch (error) {
         console.error('Error checking onboarding status:', error);
         setIsOnboardingComplete(false);

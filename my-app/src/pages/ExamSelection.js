@@ -62,8 +62,30 @@ const ExamSelection = () => {
     loadUserAndExams();
   }, [navigate]);
 
-  const handleExamSelect = (examId) => {
-    setSelectedExam(examId);
+  const handleExamSelect = async (examId) => {
+    try {
+      setLoading(true);
+      
+      // Get the current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) throw userError;
+      
+      // Update the profile with the selected exam
+      const { error } = await supabase
+        .from('profiles')
+        .update({ selected_exam_id: examId })
+        .eq('id', user.id);
+        
+      if (error) throw error;
+      
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error selecting exam:', error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async () => {

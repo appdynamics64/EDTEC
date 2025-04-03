@@ -101,13 +101,32 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', (ws) => {
   console.log('WebSocket connection established');
 
+  // Send a ping every 30 seconds to keep the connection alive
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === ws.OPEN) {
+      ws.ping();
+    }
+  }, 30000);
+
   ws.on('message', (message) => {
-    console.log('Received:', message);
-    // Echo the message back
-    ws.send(`Echo: ${message}`);
+    try {
+      console.log('Received:', message);
+      // Echo the message back
+      if (ws.readyState === ws.OPEN) {
+        ws.send(`Echo: ${message}`);
+      }
+    } catch (error) {
+      console.error('Error handling WebSocket message:', error);
+    }
   });
 
   ws.on('close', () => {
     console.log('WebSocket connection closed');
+    clearInterval(pingInterval);
+  });
+
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+    clearInterval(pingInterval);
   });
 });

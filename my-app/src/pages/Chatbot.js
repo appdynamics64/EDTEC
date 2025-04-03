@@ -7,7 +7,7 @@ import typography from '../styles/foundation/typography';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 import { v4 as uuidv4 } from 'uuid';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../config/supabaseClient';
 
 const MAX_MESSAGES = 100; // Limit the number of messages to prevent excessive memory usage
 
@@ -75,6 +75,94 @@ const Chatbot = () => {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  // Update the WebSocket connection code
+  useEffect(() => {
+    // Check if we should attempt WebSocket connection
+    const shouldConnectWebSocket = false; // Set to false to disable WebSocket connection attempts
+    
+    if (!shouldConnectWebSocket) {
+      console.log('WebSocket connection disabled');
+      return;
+    }
+    
+    let ws = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    const reconnectDelay = 3000; // 3 seconds
+    let reconnectTimeout = null;
+    
+    const connectWebSocket = () => {
+      try {
+        // Close existing connection if it exists
+        if (ws) {
+          ws.close();
+        }
+        
+        // Create new connection
+        ws = new WebSocket('ws://localhost:3000/ws');
+        
+        ws.onopen = () => {
+          console.log('WebSocket connection established');
+          reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+          
+          // Send a ping every 30 seconds to keep the connection alive
+          const pingInterval = setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'ping' }));
+            } else {
+              clearInterval(pingInterval);
+            }
+          }, 30000);
+          
+          // Clear interval when connection closes
+          ws.addEventListener('close', () => clearInterval(pingInterval));
+        };
+        
+        ws.onmessage = (event) => {
+          console.log('Message from server:', event.data);
+        };
+        
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+        };
+        
+        ws.onclose = (event) => {
+          console.log('WebSocket connection closed', event.code, event.reason);
+          
+          // Attempt to reconnect if not a normal closure and we haven't exceeded max attempts
+          if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            console.log(`Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`);
+            reconnectTimeout = setTimeout(connectWebSocket, reconnectDelay);
+          }
+        };
+      } catch (error) {
+        console.error('Error creating WebSocket connection:', error);
+        
+        // Attempt to reconnect
+        if (reconnectAttempts < maxReconnectAttempts) {
+          reconnectAttempts++;
+          console.log(`Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`);
+          reconnectTimeout = setTimeout(connectWebSocket, reconnectDelay);
+        }
+      }
+    };
+    
+    // Initial connection
+    connectWebSocket();
+    
+    // Clean up
+    return () => {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      
+      if (ws) {
+        ws.close(1000, 'Component unmounting');
+      }
+    };
+  }, []);
 
   if (!user) {
     return <LoadingScreen />;
@@ -162,6 +250,28 @@ const Chatbot = () => {
     }
   };
 
+  // Create a wrapper component
+  const MessageBubbleWrapper = ({ isUser, children, ...rest }) => {
+    return (
+      <div 
+        style={{
+          maxWidth: '75%',
+          padding: '12px 16px',
+          borderRadius: '16px',
+          alignSelf: isUser ? 'flex-end' : 'flex-start',
+          backgroundColor: isUser ? (colors.brandPrimary || '#4f46e5') : 'white',
+          color: isUser ? 'white' : (colors.textPrimary || '#1f2937'),
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+          fontSize: '1rem',
+          lineHeight: 1.5
+        }}
+        {...rest}
+      >
+        {children}
+      </div>
+    );
+  };
+
   return (
     <Container>
       <Header>
@@ -184,9 +294,9 @@ const Chatbot = () => {
         ) : (
           <MessageList>
             {messages.map((message, index) => (
-              <MessageBubble key={index} isUser={message.type === 'user'}>
-                {message.text || 'No content available'} {/* Fallback for empty content */}
-              </MessageBubble>
+              <MessageBubbleWrapper key={index} isUser={message.type === 'user'}>
+                {message.text || 'No content available'}
+              </MessageBubbleWrapper>
             ))}
             {loading && (
               <LoadingBubble>
@@ -293,18 +403,6 @@ const MessageList = styled.div`
   gap: 16px;
   padding-bottom: 16px;
   margin-bottom: 80px; /* Make space for the input form */
-`;
-
-const MessageBubble = styled.div`
-  max-width: 75%;
-  padding: 12px 16px;
-  border-radius: 16px;
-  align-self: ${props => props.isUser ? 'flex-end' : 'flex-start'};
-  background-color: ${props => props.isUser ? colors.brandPrimary || '#4f46e5' : 'white'};
-  color: ${props => props.isUser ? 'white' : colors.textPrimary || '#1f2937'};
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  ${typography.textMdRegular || 'font-size: 1rem;'};
-  line-height: 1.5;
 `;
 
 const LoadingBubble = styled.div`

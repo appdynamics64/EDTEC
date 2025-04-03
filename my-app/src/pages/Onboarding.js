@@ -10,10 +10,16 @@ const Onboarding = () => {
     e.preventDefault();
     
     try {
+      // Get the current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) throw userError;
+      
+      // Update the profile
       const { error } = await supabase
         .from('profiles')
         .update({ name })
-        .eq('id', supabase.auth.user().id);
+        .eq('id', user.id);
 
       if (error) throw error;
       navigate('/exam-selector');

@@ -4,8 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 import ProfileModal from '../components/ProfileModal';
-import { FaUserCog, FaCheckCircle, FaClock, FaChartLine, FaTrophy, FaComments } from 'react-icons/fa';
-import styled from 'styled-components';
+import { FaUserCog, FaCheckCircle, FaChartLine, FaTrophy, FaComments } from 'react-icons/fa';
 
 // Add this colors object at the top of the file, after the imports
 const colors = {
@@ -46,20 +45,6 @@ const getStatusStyle = (status) => {
       };
   }
 };
-
-const ProgressSummary = ({ totalQuestions, answeredQuestions }) => (
-  <div style={styles.progressSummary}>
-    <span>Progress: {answeredQuestions} / {totalQuestions}</span>
-    <div style={styles.progressBar}>
-      <div 
-        style={{
-          ...styles.progressFill,
-          width: `${(answeredQuestions / totalQuestions) * 100}%`
-        }}
-      />
-    </div>
-  </div>
-);
 
 const StatisticsCard = ({ icon: Icon, title, value, subtext, color }) => (
   <div style={{
@@ -102,6 +87,11 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
+    if (!user) {
+      // Don't navigate immediately, wait for auth to complete
+      return;
+    }
+    
     const loadDashboardData = async () => {
       try {
         setLoading(true);
@@ -199,7 +189,13 @@ const Dashboard = () => {
     }
   };
 
-    loadDashboardData();
+    // Only call loadDashboardData if user exists
+    if (user) {
+      loadDashboardData();
+    } else {
+      // Set loading to false if there's no user to prevent infinite loading
+      setLoading(false);
+    }
   }, [user]);
 
   const handleLogout = async () => {
@@ -214,29 +210,6 @@ const Dashboard = () => {
   const handleTestClick = (testId, status) => {
     // Remove the conditional and always navigate to test-details
     navigate(`/test-details/${testId}`);
-  };
-
-  const getTestStatusDisplay = (test) => {
-    switch (test.status) {
-      case 'completed':
-        return {
-          text: 'Completed',
-          color: colors.success,
-          backgroundColor: colors.successLight
-        };
-      case 'in_progress':
-        return {
-          text: 'In Progress',
-          color: colors.warning,
-          backgroundColor: colors.warningLight
-        };
-      default:
-        return {
-          text: 'Not Started',
-          color: colors.secondary,
-          backgroundColor: colors.secondaryLight
-        };
-    }
   };
 
   const renderTestCard = (test) => (
@@ -397,16 +370,31 @@ const Dashboard = () => {
     // You might want to refresh other parts of the UI that display user data
   };
 
-  if (loading) return <LoadingScreen />;
-  if (error) return (
-    <div style={styles.errorContainer}>
-      <h2>Error</h2>
-      <p>{error}</p>
-      <button onClick={() => window.location.reload()} style={styles.retryButton}>
-        Retry
-                    </button>
-              </div>
-  );
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  if (!user) {
+    // Redirect to login if user is not authenticated
+    navigate('/login');
+    return null;
+  }
+
+  if (error) {
+    return (
+      <div style={styles.errorContainer}>
+        <div style={styles.errorMessage}>
+          {error}
+        </div>
+        <button 
+          style={styles.retryButton}
+          onClick={() => window.location.reload()}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
@@ -597,25 +585,27 @@ const styles = {
     fontSize: '0.95rem',
   },
   errorContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100vh',
+    padding: '20px',
     textAlign: 'center',
-    padding: '40px',
-    maxWidth: '400px',
-    margin: '40px auto',
-    backgroundColor: '#fff',
-    borderRadius: '8px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  errorMessage: {
+    color: '#EF4444',
+    fontSize: '18px',
+    marginBottom: '20px',
   },
   retryButton: {
     padding: '10px 20px',
-    backgroundColor: '#007bff',
+    backgroundColor: '#3B82F6',
     color: 'white',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '6px',
     cursor: 'pointer',
-    marginTop: '20px',
-    '&:hover': {
-      backgroundColor: '#0056b3',
-    },
+    fontSize: '16px',
   },
   noTests: {
     gridColumn: '1 / -1',

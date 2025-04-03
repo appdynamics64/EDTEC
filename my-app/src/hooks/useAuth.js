@@ -1,37 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../config/supabaseClient';
 
 const useAuth = () => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const initialized = useRef(false);
 
   useEffect(() => {
-    // Check active sessions and sets the user
-    const getSession = async () => {
+    if (initialized.current) return;
+    initialized.current = true;
+    
+    const getInitialSession = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
+        const { data, error } = await supabase.auth.getSession();
         
-        setUser(session?.user ?? null);
+        if (error) {
+          console.error('Error getting session:', error);
+          setUser(null);
+        } else {
+          setUser(data.session?.user || null);
+        }
       } catch (error) {
-        console.error('Error checking auth session:', error);
+        console.error('Unexpected error in getInitialSession:', error);
         setUser(null);
       } finally {
         setIsLoading(false);
       }
     };
 
-    // Call getSession
-    getSession();
+    getInitialSession();
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setIsLoading(false);
-    });
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setUser(session?.user || null);
+      }
+    );
 
     return () => {
-      subscription?.unsubscribe();
+      if (authListener && authListener.subscription) {
+        authListener.subscription.unsubscribe();
+      }
     };
   }, []);
 

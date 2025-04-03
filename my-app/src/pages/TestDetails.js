@@ -71,6 +71,11 @@ const TestDetails = () => {
         setLoading(true);
         setError(null);
 
+        if (!user) {
+          console.log('User is not available yet, skipping data load');
+          return; // Exit early if user is not available
+        }
+
         // First fetch test details
         const { data: test, error: testError } = await supabase
           .from('tests')

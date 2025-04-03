@@ -36,11 +36,31 @@ const Login = () => {
   // Check if user is already logged in
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        navigate('/dashboard');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          // Check if onboarding is complete before redirecting to dashboard
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('name, selected_exam_id')
+            .eq('id', session.user.id)
+            .maybeSingle();
+          
+          if (error) throw error;
+          
+          // Redirect based on onboarding status
+          if (data?.name && data?.selected_exam_id) {
+            navigate('/dashboard');
+          } else {
+            navigate('/onboarding');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
+        // Don't redirect on error, just let the user stay on the login page
       }
     };
+    
     checkSession();
   }, [navigate]);
 
