@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../config/supabaseClient';
 import LoadingScreen from '../components/LoadingScreen';
@@ -7,7 +7,7 @@ import useAuth from '../hooks/useAuth';
 const TestSolution = () => {
   const navigate = useNavigate();
   const { testId, attemptId } = useParams();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [testData, setTestData] = useState(null);
@@ -17,25 +17,50 @@ const TestSolution = () => {
   const [showXPModal, setShowXPModal] = useState(false);
   const [profileData, setProfileData] = useState(null);
   const [xpUpdated, setXpUpdated] = useState(false);
+  const isUpdatingRef = useRef(false);
 
   // Add a console log to verify the component is being reached
   console.log('TestSolution mounted with:', { testId, attemptId });
 
   // Add a console log to verify the user and loading states
-  console.log('Auth state:', { user, authLoading });
+  console.log('Auth state:', { user });
 
-  // Update this function to use test score
+  // Simplified XP calculation
   const calculateXP = (stats) => {
-    // XP is equal to the total marks earned
     return Math.round(stats.totalMarks);
   };
 
-  // Add this function to update user's XP
+  // Check for existing XP transaction
+  const checkExistingXPTransaction = async (testId) => {
+    const { data, error } = await supabase
+      .from('xp_transactions')
+      .select('*')
+      .eq('test_id', testId)
+      .eq('user_id', user.id)
+      .eq('source', 'test_completed');
+
+    console.log('Existing XP transactions:', data);
+    return data && data.length > 0;
+  };
+
+  // Update user XP
   const updateUserXP = async (xpAmount) => {
+    if (isUpdatingRef.current) return;
+    isUpdatingRef.current = true;
+
     try {
       console.log('Starting XP update with amount:', xpAmount);
 
-      // First get current XP
+      // Check for existing transaction
+      const hasExistingTransaction = await checkExistingXPTransaction(testId);
+      if (hasExistingTransaction) {
+        console.log('XP already awarded for this test');
+        setXpEarned(xpAmount);
+        setShowXPModal(true);
+        return;
+      }
+
+      // Get current profile data
       const { data: currentProfile, error: profileError } = await supabase
         .from('profiles')
         .select('total_xp, weekly_xp')
@@ -44,7 +69,7 @@ const TestSolution = () => {
 
       if (profileError) throw profileError;
 
-      console.log('Current profile data:', currentProfile);
+      console.log('Current profile:', currentProfile);
 
       // Calculate new XP values
       const newTotalXP = (currentProfile.total_xp || 0) + xpAmount;
@@ -61,7 +86,7 @@ const TestSolution = () => {
 
       if (updateError) throw updateError;
 
-      // Record XP transaction
+      // Create XP transaction
       const { error: transactionError } = await supabase
         .from('xp_transactions')
         .insert({
@@ -73,18 +98,24 @@ const TestSolution = () => {
 
       if (transactionError) throw transactionError;
 
-      setProfileData({ totalXP: newTotalXP, weeklyXP: newWeeklyXP });
-      setXpUpdated(true);
+      console.log('XP updated successfully:', { newTotalXP, newWeeklyXP });
       
+      setProfileData({ totalXP: newTotalXP, weeklyXP: newWeeklyXP });
+      setXpEarned(xpAmount);
+      setShowXPModal(true);
+      setXpUpdated(true);
+
     } catch (error) {
       console.error('Error updating XP:', error);
+    } finally {
+      isUpdatingRef.current = false;
     }
   };
 
   useEffect(() => {
     const fetchSolutions = async () => {
       try {
-        console.log('Starting fetchSolutions with:', { testId, attemptId, user });
+        console.log('Starting fetchSolutions');
         setLoading(true);
         
         // First verify that this attempt belongs to the current user
@@ -190,15 +221,11 @@ const TestSolution = () => {
           unansweredMarks: (totalQuestions - attemptedAnswers.length) * scoringRule.marks_unanswered
         };
 
-        // After setting stats, calculate and update XP
-        const earnedXP = calculateXP(stats);
-        console.log('Calculated XP:', earnedXP);
-        
-        // Only update XP if it hasn't been updated yet
-        if (!xpUpdated) {
+        // After getting stats, update XP
+        if (stats && !xpUpdated) {
+          const earnedXP = calculateXP(stats);
+          console.log('Calculated XP:', earnedXP);
           await updateUserXP(earnedXP);
-          setXpEarned(earnedXP);
-          setShowXPModal(true);
         }
 
         setTestData(testAttempt.test);
@@ -214,27 +241,14 @@ const TestSolution = () => {
       }
     };
 
-    // Wait for auth to be checked before proceeding
-    if (authLoading) {
-      return; // Don't do anything while auth is loading
-    }
-
-    // Only redirect if auth is finished loading and there's no user
-    if (!authLoading && !user) {
-      console.log('Auth finished loading, no user found');
-      navigate('/login');
-      return;
-    }
-
-    // Only fetch solutions if we have a user
-    if (user) {
+    if (user && !xpUpdated) {
       fetchSolutions();
     }
 
-  }, [attemptId, user, navigate, authLoading, testId, xpUpdated]); // Add xpUpdated to dependencies
+  }, [testId, attemptId, user, xpUpdated]);
 
   // Show loading screen while auth is being checked
-  if (authLoading || loading) {
+  if (loading) {
     return <LoadingScreen />;
   }
 
@@ -244,7 +258,7 @@ const TestSolution = () => {
 
   if (error) return <div style={styles.error}>{error}</div>;
 
-  // Add XP Modal component
+  // XP Modal component
   const XPModal = () => {
     if (!showXPModal || !xpEarned) return null;
 
@@ -252,7 +266,9 @@ const TestSolution = () => {
       <div style={styles.modalOverlay}>
         <div style={styles.modalContent}>
           <h2 style={styles.modalTitle}>🎉 Congratulations! 🎉</h2>
-          <div style={styles.xpAnimation}>+{xpEarned} XP</div>
+          <div style={styles.xpAnimation}>
+            {xpEarned >= 0 ? `+${xpEarned}` : xpEarned} XP
+          </div>
           <p style={styles.modalText}>
             You've earned {xpEarned} XP for completing this test!
           </p>
