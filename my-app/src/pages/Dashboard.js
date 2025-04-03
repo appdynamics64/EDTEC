@@ -5,6 +5,7 @@ import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 import ProfileModal from '../components/ProfileModal';
 import { FaUserCog, FaCheckCircle, FaClock, FaChartLine, FaTrophy, FaComments } from 'react-icons/fa';
+import styled from 'styled-components';
 
 // Add this colors object at the top of the file, after the imports
 const colors = {
@@ -87,10 +88,8 @@ const Dashboard = () => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [userData, setUserData] = useState(null);
-  const [userTests, setUserTests] = useState([]);
   const [availableExams, setAvailableExams] = useState([]);
   const [isChangingExam, setIsChangingExam] = useState(false);
-  const [showChatbot, setShowChatbot] = useState(false);
 
   // Filter tests based on activeFilter
   const filteredTests = tests.filter(test => {
@@ -111,7 +110,7 @@ const Dashboard = () => {
         // Get user profile data
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, name, selected_exam_id')
+          .select('id, name, selected_exam_id, profile_photo_url')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -201,91 +200,6 @@ const Dashboard = () => {
   };
 
     loadDashboardData();
-  }, [user]);
-
-  useEffect(() => {
-    const fetchUserTests = async () => {
-      try {
-        setLoading(true);
-        
-        // First fetch tests with their attempts
-        const { data: tests, error } = await supabase
-          .from('tests')
-        .select(`
-          id,
-            test_name,
-            test_duration,
-            number_of_questions,
-            type,
-            test_attempts!left (
-              id,
-              start_time,
-              end_time,
-              final_score,
-              created_at
-            )
-          `)
-          .eq('test_attempts.user_id', user.id)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        // Process the tests and finalize any expired attempts
-        const processedTests = await Promise.all(tests.map(async test => {
-          const attempts = test.test_attempts || [];
-          const latestAttempt = attempts.sort((a, b) => 
-            new Date(b.created_at) - new Date(a.created_at)
-          )[0];
-
-          let status = 'not_started';
-          if (latestAttempt) {
-            if (latestAttempt.end_time || latestAttempt.final_score !== null) {
-              status = 'completed';
-            } else if (latestAttempt.start_time) {
-              // Check if the test should have ended based on duration
-              const startTime = new Date(latestAttempt.start_time);
-              const shouldEndTime = new Date(startTime.getTime() + (test.test_duration * 60 * 1000));
-              const now = new Date();
-
-              if (now > shouldEndTime) {
-                // Test should be finished - call finalize_test_attempt
-                try {
-                  await supabase.rpc('finalize_test_attempt', {
-                    p_test_attempt_id: latestAttempt.id,
-                    p_ended_by: 'timeout'
-                  });
-                  status = 'completed';
-    } catch (error) {
-                  console.error('Error finalizing expired test:', error);
-                  // Keep status as in_progress if finalization fails
-                  status = 'in_progress';
-                }
-              } else {
-                status = 'in_progress';
-              }
-            }
-          }
-
-          return {
-            ...test,
-            status,
-            lastAttemptDate: latestAttempt?.created_at || null,
-            completed: status === 'completed'
-          };
-        }));
-
-        setUserTests(processedTests);
-    } catch (error) {
-        console.error('Error fetching tests:', error);
-        setError(error.message);
-    } finally {
-        setLoading(false);
-      }
-    };
-
-    if (user) {
-      fetchUserTests();
-    }
   }, [user]);
 
   const handleLogout = async () => {
@@ -478,6 +392,11 @@ const Dashboard = () => {
     );
   };
 
+  const handleProfileUpdate = (updatedData) => {
+    setUserData(updatedData);
+    // You might want to refresh other parts of the UI that display user data
+  };
+
   if (loading) return <LoadingScreen />;
   if (error) return (
     <div style={styles.errorContainer}>
@@ -512,9 +431,17 @@ const Dashboard = () => {
             style={styles.profileSection} 
             onClick={() => setShowProfileMenu(!showProfileMenu)}
           >
-            <div style={styles.avatarPlaceholder}>
-              {userData?.name?.charAt(0).toUpperCase() || 'U'}
-            </div>
+            {userData?.profile_photo_url ? (
+              <img 
+                src={userData.profile_photo_url} 
+                alt={userData?.name || 'User'} 
+                style={styles.avatarImage} 
+              />
+            ) : (
+              <div style={styles.avatarPlaceholder}>
+                {userData?.name ? userData.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+            )}
             <span style={styles.userName}>{userData?.name || 'User'}</span>
           </div>
           
@@ -527,6 +454,7 @@ const Dashboard = () => {
                   setShowProfileMenu(false);
                 }}
               >
+                <FaUserCog style={{ marginRight: '8px' }} />
                 Edit Profile
               </button>
               <button 
@@ -596,10 +524,8 @@ const Dashboard = () => {
         <ProfileModal
           isOpen={showProfileModal}
           onClose={() => setShowProfileModal(false)}
-          userData={{
-            ...userData,
-            email: user.email
-          }}
+          userData={userData}
+          onUpdate={handleProfileUpdate}
         />
       )}
 
@@ -775,16 +701,18 @@ const styles = {
     zIndex: 10,
   },
   menuItem: {
+    display: 'flex',
+    alignItems: 'center',
     width: '100%',
-    padding: '8px 12px',
-    border: 'none',
-    backgroundColor: 'transparent',
     textAlign: 'left',
+    padding: '10px 16px',
+    backgroundColor: 'transparent',
+    border: 'none',
     cursor: 'pointer',
-    borderRadius: '4px',
-    color: '#374151',
+    fontSize: '14px',
+    color: '#333',
     '&:hover': {
-      backgroundColor: '#f3f4f6',
+      backgroundColor: '#f5f5f5',
     },
   },
   startButton: {
@@ -1129,15 +1057,13 @@ const styles = {
       backgroundColor: '#2563eb',
     },
   },
+  avatarImage: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    objectFit: 'cover',
+  },
 };
-
-// Add some CSS to your global styles or component
-const globalStyles = `
-  .test-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  }
-`;
 
 const examSelectorStyles = {
   overlay: {

@@ -6,6 +6,8 @@ import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
+import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../lib/supabase';
 
 const MAX_MESSAGES = 100; // Limit the number of messages to prevent excessive memory usage
 
@@ -17,7 +19,55 @@ const Chatbot = () => {
   ]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const messagesEndRef = useRef(null);
+
+  // Generate a unique conversation ID or use existing one from localStorage
+  const conversationId = useRef(
+    localStorage.getItem('currentConversationId') || uuidv4()
+  );
+
+  // Save conversation ID to localStorage
+  useEffect(() => {
+    localStorage.setItem('currentConversationId', conversationId.current);
+  }, []);
+
+  // Load previous messages for this conversation
+  useEffect(() => {
+    const loadPreviousMessages = async () => {
+      if (!user) return;
+      
+      try {
+        setInitialLoading(true);
+        
+        const { data, error } = await supabase
+          .from('chat_messages')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('conversation_id', conversationId.current)
+          .order('created_at', { ascending: true });
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          // Transform database messages to the format used in the component
+          const formattedMessages = data.map(msg => ({
+            type: msg.is_user ? 'user' : 'bot',
+            text: msg.message
+          }));
+          
+          // Replace the default welcome message with the actual conversation
+          setMessages(formattedMessages);
+        }
+      } catch (error) {
+        console.error('Error loading previous messages:', error);
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+    
+    loadPreviousMessages();
+  }, [user]);
 
   // Scroll to the bottom of the chat when messages change
   useEffect(() => {
@@ -43,12 +93,15 @@ const Chatbot = () => {
     });
     setInputText('');
     
+    // Save user message to the database
+    saveMessageToDatabase(userMessage.text, true);
+
     // Set loading state
     setLoading(true);
     
     try {
       // Call backend API
-      const response = await fetch('http://localhost:5000/api/chat', {
+      const response = await fetch('http://localhost:5000/api/chat-messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -75,11 +128,37 @@ const Chatbot = () => {
         const newMessages = [...prev, botResponse];
         return newMessages.length > MAX_MESSAGES ? newMessages.slice(-MAX_MESSAGES) : newMessages;
       });
+
+      // Save bot response to the database
+      saveMessageToDatabase(botResponse.text, false);
     } catch (error) {
       console.error('Error fetching response from backend:', error);
       setMessages(prev => [...prev, { type: 'bot', text: 'Sorry, I am unable to process your request at the moment.' }]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveMessageToDatabase = async (message, isUser) => {
+    try {
+      // Get the session and access token
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session) {
+        throw new Error('Failed to retrieve session or session is null');
+      }
+
+      const authToken = session.access_token; // Get the auth token
+
+      await fetch('http://localhost:5000/api/chat-messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}` // Include the auth token
+        },
+        body: JSON.stringify({ conversationId: conversationId.current, message, isUser }),
+      });
+    } catch (error) {
+      console.error('Error saving message to database:', error);
     }
   };
 
@@ -93,21 +172,32 @@ const Chatbot = () => {
       </Header>
       
       <ChatContainer>
-        <MessageList>
-          {messages.map((message, index) => (
-            <MessageBubble key={index} isUser={message.type === 'user'}>
-              {message.text || 'No content available'} {/* Fallback for empty content */}
-            </MessageBubble>
-          ))}
-          {loading && (
+        {initialLoading ? (
+          <LoadingContainer>
             <LoadingBubble>
               <LoadingDot delay="0s" />
               <LoadingDot delay="0.2s" />
               <LoadingDot delay="0.4s" />
             </LoadingBubble>
-          )}
-          <div ref={messagesEndRef} />
-        </MessageList>
+            <LoadingText>Loading conversation history...</LoadingText>
+          </LoadingContainer>
+        ) : (
+          <MessageList>
+            {messages.map((message, index) => (
+              <MessageBubble key={index} isUser={message.type === 'user'}>
+                {message.text || 'No content available'} {/* Fallback for empty content */}
+              </MessageBubble>
+            ))}
+            {loading && (
+              <LoadingBubble>
+                <LoadingDot delay="0s" />
+                <LoadingDot delay="0.2s" />
+                <LoadingDot delay="0.4s" />
+              </LoadingBubble>
+            )}
+            <div ref={messagesEndRef} />
+          </MessageList>
+        )}
         
         <InputForm onSubmit={handleSubmit}>
           <ChatInput
@@ -115,9 +205,9 @@ const Chatbot = () => {
             placeholder="Type your question here..."
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            disabled={loading}
+            disabled={loading || initialLoading}
           />
-          <SendButton type="submit" disabled={loading || !inputText.trim()}>
+          <SendButton type="submit" disabled={loading || initialLoading || !inputText.trim()}>
             <FaPaperPlane />
           </SendButton>
         </InputForm>
@@ -126,12 +216,28 @@ const Chatbot = () => {
   );
 };
 
+// Add this new styled component
+const LoadingContainer = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+`;
+
+const LoadingText = styled.p`
+  ${typography.textMdRegular};
+  color: ${colors.textSecondary};
+  margin-top: 16px;
+`;
+
 // Styled components
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   height: 100vh;
   background-color: ${colors.backgroundSecondary || '#f5f7fa'};
+  overflow: hidden; /* Prevent the container from scrolling */
 `;
 
 const Header = styled.header`
@@ -141,6 +247,7 @@ const Header = styled.header`
   background-color: ${colors.brandPrimary || '#4f46e5'};
   color: white;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 10; /* Ensure header stays on top */
 `;
 
 const BackButton = styled.button`
@@ -173,15 +280,19 @@ const ChatContainer = styled.div`
   max-width: 800px;
   margin: 0 auto;
   width: 100%;
+  height: 100%; /* Ensure it takes full height */
+  position: relative; /* For proper positioning of children */
+  overflow: hidden; /* Prevent container from scrolling */
 `;
 
 const MessageList = styled.div`
   flex: 1;
-  overflow-y: auto;
+  overflow-y: auto; /* Allow message list to scroll */
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding-bottom: 16px;
+  margin-bottom: 80px; /* Make space for the input form */
 `;
 
 const MessageBubble = styled.div`
@@ -222,8 +333,14 @@ const LoadingDot = styled.div`
 const InputForm = styled.form`
   display: flex;
   gap: 12px;
-  padding-top: 16px;
+  padding: 16px 0;
   border-top: 1px solid ${colors.borderPrimary || '#e5e7eb'};
+  background-color: ${colors.backgroundSecondary || '#f5f7fa'};
+  position: absolute;
+  bottom: 0;
+  left: 24px;
+  right: 24px;
+  width: calc(100% - 48px);
 `;
 
 const ChatInput = styled.input`
