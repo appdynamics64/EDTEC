@@ -13,12 +13,73 @@ const TestSolution = () => {
   const [testData, setTestData] = useState(null);
   const [attemptStats, setAttemptStats] = useState(null);
   const [solutions, setSolutions] = useState([]);
+  const [xpEarned, setXpEarned] = useState(null);
+  const [showXPModal, setShowXPModal] = useState(false);
+  const [profileData, setProfileData] = useState(null);
+  const [xpUpdated, setXpUpdated] = useState(false);
 
   // Add a console log to verify the component is being reached
   console.log('TestSolution mounted with:', { testId, attemptId });
 
   // Add a console log to verify the user and loading states
   console.log('Auth state:', { user, authLoading });
+
+  // Update this function to use test score
+  const calculateXP = (stats) => {
+    // XP is equal to the total marks earned
+    return Math.round(stats.totalMarks);
+  };
+
+  // Add this function to update user's XP
+  const updateUserXP = async (xpAmount) => {
+    try {
+      console.log('Starting XP update with amount:', xpAmount);
+
+      // First get current XP
+      const { data: currentProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('total_xp, weekly_xp')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
+
+      console.log('Current profile data:', currentProfile);
+
+      // Calculate new XP values
+      const newTotalXP = (currentProfile.total_xp || 0) + xpAmount;
+      const newWeeklyXP = (currentProfile.weekly_xp || 0) + xpAmount;
+
+      // Update profile XP
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          total_xp: newTotalXP,
+          weekly_xp: newWeeklyXP
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      // Record XP transaction
+      const { error: transactionError } = await supabase
+        .from('xp_transactions')
+        .insert({
+          user_id: user.id,
+          xp_earned: xpAmount,
+          source: 'test_completed',
+          test_id: testId
+        });
+
+      if (transactionError) throw transactionError;
+
+      setProfileData({ totalXP: newTotalXP, weeklyXP: newWeeklyXP });
+      setXpUpdated(true);
+      
+    } catch (error) {
+      console.error('Error updating XP:', error);
+    }
+  };
 
   useEffect(() => {
     const fetchSolutions = async () => {
@@ -129,6 +190,17 @@ const TestSolution = () => {
           unansweredMarks: (totalQuestions - attemptedAnswers.length) * scoringRule.marks_unanswered
         };
 
+        // After setting stats, calculate and update XP
+        const earnedXP = calculateXP(stats);
+        console.log('Calculated XP:', earnedXP);
+        
+        // Only update XP if it hasn't been updated yet
+        if (!xpUpdated) {
+          await updateUserXP(earnedXP);
+          setXpEarned(earnedXP);
+          setShowXPModal(true);
+        }
+
         setTestData(testAttempt.test);
         setAttemptStats(stats);
         setSolutions(allSolutions);
@@ -159,7 +231,7 @@ const TestSolution = () => {
       fetchSolutions();
     }
 
-  }, [attemptId, user, navigate, authLoading, testId]); // Add authLoading to dependencies
+  }, [attemptId, user, navigate, authLoading, testId, xpUpdated]); // Add xpUpdated to dependencies
 
   // Show loading screen while auth is being checked
   if (authLoading || loading) {
@@ -171,6 +243,35 @@ const TestSolution = () => {
   }
 
   if (error) return <div style={styles.error}>{error}</div>;
+
+  // Add XP Modal component
+  const XPModal = () => {
+    if (!showXPModal || !xpEarned) return null;
+
+    return (
+      <div style={styles.modalOverlay}>
+        <div style={styles.modalContent}>
+          <h2 style={styles.modalTitle}>🎉 Congratulations! 🎉</h2>
+          <div style={styles.xpAnimation}>+{xpEarned} XP</div>
+          <p style={styles.modalText}>
+            You've earned {xpEarned} XP for completing this test!
+          </p>
+          {profileData && (
+            <div style={styles.xpStats}>
+              <p>Total XP: {profileData.totalXP}</p>
+              <p>Weekly XP: {profileData.weeklyXP}</p>
+            </div>
+          )}
+          <button 
+            style={styles.modalButton}
+            onClick={() => setShowXPModal(false)}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={styles.container}>
@@ -260,6 +361,7 @@ const TestSolution = () => {
           ))}
         </div>
       </div>
+      <XPModal />
     </div>
   );
 };
@@ -468,6 +570,78 @@ const styles = {
     fontSize: '14px',
     fontWeight: '500',
   },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    padding: '32px',
+    borderRadius: '16px',
+    textAlign: 'center',
+    maxWidth: '400px',
+    width: '90%',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
+    animation: 'modalPop 0.3s ease-out',
+  },
+  modalTitle: {
+    fontSize: '24px',
+    color: '#2d3748',
+    marginBottom: '20px',
+  },
+  xpAnimation: {
+    fontSize: '48px',
+    fontWeight: 'bold',
+    color: '#4C51BF',
+    margin: '24px 0',
+    animation: 'xpBounce 0.5s ease-out',
+  },
+  modalText: {
+    fontSize: '18px',
+    color: '#4a5568',
+    marginBottom: '20px',
+  },
+  xpStats: {
+    backgroundColor: '#F7FAFC',
+    padding: '16px',
+    borderRadius: '8px',
+    marginBottom: '20px',
+  },
+  modalButton: {
+    backgroundColor: '#4C51BF',
+    color: 'white',
+    border: 'none',
+    padding: '12px 24px',
+    borderRadius: '8px',
+    fontSize: '16px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+    ':hover': {
+      backgroundColor: '#434190',
+    },
+  },
 };
+
+// Add these CSS keyframes to your global CSS or style tag
+const globalStyles = `
+  @keyframes modalPop {
+    0% { transform: scale(0.8); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes xpBounce {
+    0% { transform: scale(0.3); opacity: 0; }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+`;
 
 export default TestSolution; 

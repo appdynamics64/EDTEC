@@ -4,6 +4,27 @@ import { supabase } from '../config/supabaseClient';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 
+const XPRewardPopup = ({ xpEarned, totalXp, onClose }) => {
+  return (
+    <div style={xpPopupStyles.overlay}>
+      <div style={xpPopupStyles.modal}>
+        <div style={xpPopupStyles.content}>
+          <div style={xpPopupStyles.xpIcon}>🌟</div>
+          <h2 style={xpPopupStyles.title}>Congratulations!</h2>
+          <div style={xpPopupStyles.xpAmount}>+{xpEarned} XP</div>
+          <p style={xpPopupStyles.totalXp}>Total XP: {totalXp}</p>
+          <button 
+            onClick={onClose}
+            style={xpPopupStyles.closeButton}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const TestDetails = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -22,6 +43,27 @@ const TestDetails = () => {
   const [testAttemptId, setTestAttemptId] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [inProgressAttempt, setInProgressAttempt] = useState(null);
+  const [showXPPopup, setShowXPPopup] = useState(false);
+  const [xpEarned, setXpEarned] = useState(0);
+  const [totalXp, setTotalXp] = useState(0);
+
+  const calculateXP = (stats) => {
+    let xp = 0;
+    
+    // Base XP for completing the test
+    xp += 50;
+
+    // XP for correct answers (10 XP per correct answer)
+    xp += stats.correctAnswers * 10;
+
+    // Bonus XP for high accuracy (>75%)
+    const accuracy = (stats.correctAnswers / stats.totalQuestions) * 100;
+    if (accuracy >= 75) {
+      xp += 50; // Bonus for high accuracy
+    }
+
+    return xp;
+  };
 
   useEffect(() => {
     const fetchTestDetails = async () => {
@@ -116,6 +158,42 @@ const TestDetails = () => {
           unansweredMarks: (test.number_of_questions - lastAttempt.test_attempt_answers.length) * scoringRule.marks_unanswered
         });
 
+        if (lastAttempt && attemptStats) {
+          if (location.state?.justCompleted) {
+            const earnedXP = calculateXP(attemptStats);
+            
+            // Record XP transaction
+            const { data: xpTransaction, error: xpError } = await supabase
+              .from('xp_transactions')
+              .insert({
+                user_id: user.id,
+                source: 'test_completed',
+                test_id: parseInt(testId),
+                xp_earned: earnedXP
+              })
+              .select()
+              .single();
+
+            if (xpError) throw xpError;
+
+            // Update user's total XP
+            const { data: updatedProfile, error: profileError } = await supabase
+              .from('profiles')
+              .update({ 
+                total_xp: supabase.raw('total_xp + ?', [earnedXP]),
+                weekly_xp: supabase.raw('weekly_xp + ?', [earnedXP])
+              })
+              .eq('id', user.id)
+              .select('total_xp')
+              .single();
+
+            if (profileError) throw profileError;
+
+            setXpEarned(earnedXP);
+            setTotalXp(updatedProfile.total_xp);
+            setShowXPPopup(true);
+          }
+        }
       } catch (error) {
         console.error('Error fetching test details:', error);
         setError(error.message);
@@ -133,7 +211,7 @@ const TestDetails = () => {
       setAttemptStats(null);
       setTestData(null);
     };
-  }, [testId, user, location.key]);
+  }, [testId, user, location.key, location.state?.justCompleted]);
 
   const handleStartTest = async () => {
     try {
@@ -312,6 +390,14 @@ const TestDetails = () => {
         onContinue={handleContinueTest}
         onStartNew={handleStartNewTest}
       />
+
+      {showXPPopup && (
+        <XPRewardPopup
+          xpEarned={xpEarned}
+          totalXp={totalXp}
+          onClose={() => setShowXPPopup(false)}
+        />
+      )}
     </div>
   );
 };
@@ -575,6 +661,66 @@ const modalStyles = {
     transition: 'background-color 0.2s',
     '&:hover': {
       backgroundColor: '#4B5563',
+    },
+  },
+};
+
+const xpPopupStyles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: 'white',
+    borderRadius: '16px',
+    padding: '32px',
+    width: '90%',
+    maxWidth: '400px',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
+    animation: 'popIn 0.5s ease-out',
+  },
+  content: {
+    textAlign: 'center',
+  },
+  xpIcon: {
+    fontSize: '48px',
+    marginBottom: '16px',
+  },
+  title: {
+    color: '#2C3E50',
+    fontSize: '24px',
+    marginBottom: '16px',
+  },
+  xpAmount: {
+    color: '#27AE60',
+    fontSize: '36px',
+    fontWeight: 'bold',
+    marginBottom: '8px',
+  },
+  totalXp: {
+    color: '#7F8C8D',
+    fontSize: '16px',
+    marginBottom: '24px',
+  },
+  closeButton: {
+    backgroundColor: '#3498DB',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '12px 24px',
+    fontSize: '16px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+    '&:hover': {
+      backgroundColor: '#2980B9',
     },
   },
 };
