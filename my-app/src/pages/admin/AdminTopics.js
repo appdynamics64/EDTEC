@@ -3,40 +3,69 @@ import styled from 'styled-components';
 import { supabase } from '../../config/supabaseClient';
 import colors from '../../styles/foundation/colors';
 import typography from '../../styles/foundation/typography';
-import { FaEdit, FaTrash, FaPlus, FaSearch, FaFilter } from 'react-icons/fa';
+import { FaPlus, FaEdit, FaTrash, FaSearch, FaTimes, FaChevronDown, FaChevronUp } from 'react-icons/fa';
 
 const AdminTopics = () => {
-  const [topics, setTopics] = useState([]);
+  // State variables
   const [subjects, setSubjects] = useState([]);
+  const [topics, setTopics] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [currentTopic, setCurrentTopic] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
+  const [expandedSubjects, setExpandedSubjects] = useState({});
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [topicToDelete, setTopicToDelete] = useState(null);
+  
+  // Form state
   const [formData, setFormData] = useState({
     topic_name: '',
     subject_id: ''
   });
-  const [formErrors, setFormErrors] = useState({});
-
+  
+  // Fetch data on component mount
   useEffect(() => {
-    fetchTopics();
     fetchSubjects();
+    fetchTopics();
   }, []);
-
+  
+  // Fetch subjects from Supabase
+  const fetchSubjects = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('*')
+        .order('subject_name');
+      
+      if (error) throw error;
+      
+      setSubjects(data || []);
+      
+      // Initialize expanded state for all subjects as collapsed (false) by default
+      const expandedState = {};
+      data.forEach(subject => {
+        expandedState[subject.id] = false; // Start with all collapsed
+      });
+      setExpandedSubjects(expandedState);
+    } catch (error) {
+      console.error('Error fetching subjects:', error);
+      setError('Failed to load subjects');
+    }
+  };
+  
+  // Fetch topics with subject data
   const fetchTopics = async () => {
     try {
       setLoading(true);
       
-      // Get topics with subject info and counts
       const { data, error } = await supabase
         .from('topics')
         .select(`
-          id, 
-          topic_name, 
+          id,
+          topic_name,
           subject_id,
-          created_at,
           subjects (
             id,
             subject_name
@@ -46,20 +75,22 @@ const AdminTopics = () => {
       
       if (error) throw error;
       
-      // Get question counts for each topic
-      const topicsWithCounts = await Promise.all(data.map(async (topic) => {
-        const { count, error: countError } = await supabase
-          .from('questions')
-          .select('*', { count: 'exact', head: true })
-          .eq('topic_id', topic.id);
+      // For each topic, fetch the question count
+      const topicsWithCounts = await Promise.all(
+        data.map(async (topic) => {
+          const { count, error: countError } = await supabase
+            .from('questions')
+            .select('*', { count: 'exact', head: true })
+            .eq('topic_id', topic.id);
           
-        if (countError) throw countError;
-        
-        return {
-          ...topic,
-          questionCount: count || 0
-        };
-      }));
+          if (countError) {
+            console.error('Error fetching question count:', countError);
+            return { ...topic, questionCount: 0 };
+          }
+          
+          return { ...topic, questionCount: count || 0 };
+        })
+      );
       
       setTopics(topicsWithCounts);
     } catch (error) {
@@ -69,91 +100,85 @@ const AdminTopics = () => {
       setLoading(false);
     }
   };
-
-  const fetchSubjects = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('subjects')
-        .select('id, subject_name')
-        .order('subject_name');
-      
-      if (error) throw error;
-      
-      setSubjects(data || []);
-    } catch (error) {
-      console.error('Error fetching subjects:', error);
-    }
+  
+  // Toggle subject expansion
+  const toggleSubjectExpansion = (subjectId) => {
+    setExpandedSubjects(prev => ({
+      ...prev,
+      [subjectId]: !prev[subjectId]
+    }));
   };
-
-  const handleCreateTopic = () => {
+  
+  // Handle form input changes
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+  
+  // Open modal to add a new topic
+  const handleAddTopic = () => {
     setCurrentTopic(null);
     setFormData({
       topic_name: '',
-      subject_id: subjects.length > 0 ? subjects[0].id : ''
+      subject_id: subjects.length > 0 ? subjects[0].id.toString() : ''
     });
-    setFormErrors({});
-    setIsModalOpen(true);
+    setShowAddModal(true);
   };
-
+  
+  // Open modal to edit an existing topic
   const handleEditTopic = (topic) => {
     setCurrentTopic(topic);
     setFormData({
       topic_name: topic.topic_name,
-      subject_id: topic.subject_id
+      subject_id: topic.subject_id.toString()
     });
-    setFormErrors({});
-    setIsModalOpen(true);
+    setShowAddModal(true);
   };
-
-  const handleDeleteTopic = async (topicId) => {
+  
+  // Handle topic deletion
+  const handleDeleteTopic = (topic) => {
+    setTopicToDelete(topic);
+    setShowDeleteConfirmation(true);
+  };
+  
+  // Add a function to confirm deletion
+  const confirmDeleteTopic = async () => {
     try {
-      if (!window.confirm('Are you sure you want to delete this topic? This will also delete all associated questions.')) {
-        return;
-      }
+      // First delete all questions associated with this topic
+      const { error: questionsError } = await supabase
+        .from('questions')
+        .delete()
+        .eq('topic_id', topicToDelete.id);
       
+      if (questionsError) throw questionsError;
+      
+      // Then delete the topic
       const { error } = await supabase
         .from('topics')
         .delete()
-        .eq('id', topicId);
+        .eq('id', topicToDelete.id);
       
       if (error) throw error;
       
-      // Refresh topics list
+      // Close the confirmation modal and refresh topics
+      setShowDeleteConfirmation(false);
+      setTopicToDelete(null);
       fetchTopics();
     } catch (error) {
       console.error('Error deleting topic:', error);
-      alert('Failed to delete topic. It may be referenced by questions.');
+      alert('Failed to delete topic. Please try again.');
     }
   };
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
-    // Clear error when user types
-    if (formErrors[name]) {
-      setFormErrors({ ...formErrors, [name]: null });
-    }
-  };
-
-  const validateForm = () => {
-    const errors = {};
-    
-    if (!formData.topic_name.trim()) {
-      errors.topic_name = 'Topic name is required';
-    }
-    
-    if (!formData.subject_id) {
-      errors.subject_id = 'Subject is required';
-    }
-    
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
+  
+  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!validateForm()) {
+    if (!formData.topic_name.trim() || !formData.subject_id) {
+      alert('Please fill in all fields');
       return;
     }
     
@@ -162,10 +187,9 @@ const AdminTopics = () => {
         // Update existing topic
         const { error } = await supabase
           .from('topics')
-          .update({ 
-            topic_name: formData.topic_name,
-            subject_id: formData.subject_id,
-            updated_at: new Date().toISOString()
+          .update({
+            topic_name: formData.topic_name.trim(),
+            subject_id: parseInt(formData.subject_id)
           })
           .eq('id', currentTopic.id);
         
@@ -174,49 +198,74 @@ const AdminTopics = () => {
         // Create new topic
         const { error } = await supabase
           .from('topics')
-          .insert({ 
-            topic_name: formData.topic_name,
-            subject_id: formData.subject_id
+          .insert({
+            topic_name: formData.topic_name.trim(),
+            subject_id: parseInt(formData.subject_id)
           });
         
         if (error) throw error;
       }
       
-      // Close modal and refresh list
-      setIsModalOpen(false);
+      // Close modal and refresh topics
+      setShowAddModal(false);
       fetchTopics();
     } catch (error) {
       console.error('Error saving topic:', error);
-      alert('Failed to save topic');
+      alert('Failed to save topic. Please try again.');
     }
   };
-
+  
+  // Filter topics based on search term and selected subject
   const filteredTopics = topics.filter(topic => {
-    // Filter by search query
-    const matchesSearch = topic.topic_name.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // Filter by subject if one is selected
-    const matchesSubject = !filterSubject || topic.subject_id === filterSubject;
-    
+    const matchesSearch = topic.topic_name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSubject = filterSubject ? topic.subject_id === parseInt(filterSubject) : true;
     return matchesSearch && matchesSubject;
   });
-
+  
+  // Group topics by subject for the organized view
+  const topicsBySubject = {};
+  subjects.forEach(subject => {
+    topicsBySubject[subject.id] = filteredTopics.filter(
+      topic => topic.subject_id === subject.id
+    );
+  });
+  
   return (
     <Container>
-      <ControlsBar>
-        <FilterContainer>
-          <SearchContainer>
+      <Header>
+        <h1>Topics Management</h1>
+        <ActionButton primary onClick={handleAddTopic}>
+          <FaPlus /> Add New Topic
+        </ActionButton>
+      </Header>
+      
+      <FiltersContainer>
+        <SearchContainer>
+          <label htmlFor="topic-search">Search</label>
+          <InputWrapper>
+            <SearchIcon>
+              <FaSearch />
+            </SearchIcon>
             <SearchInput
+              id="topic-search"
               type="text"
               placeholder="Search topics..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <FaSearch className="search-icon" />
-          </SearchContainer>
-          
-          <SelectContainer>
-            <Select
+            {searchTerm && (
+              <ClearButton onClick={() => setSearchTerm('')}>
+                <FaTimes />
+              </ClearButton>
+            )}
+          </InputWrapper>
+        </SearchContainer>
+        
+        <FilterSelectContainer>
+          <label htmlFor="subject-filter">Subject</label>
+          <InputWrapper>
+            <FilterSelect
+              id="subject-filter"
               value={filterSubject}
               onChange={(e) => setFilterSubject(e.target.value)}
             >
@@ -226,283 +275,444 @@ const AdminTopics = () => {
                   {subject.subject_name}
                 </option>
               ))}
-            </Select>
-            <FaFilter className="filter-icon" />
-          </SelectContainer>
-        </FilterContainer>
-        
-        <ActionButton primary onClick={handleCreateTopic}>
-          <FaPlus /> Add Topic
-        </ActionButton>
-      </ControlsBar>
+            </FilterSelect>
+            <SelectIcon>
+              <FaChevronDown />
+            </SelectIcon>
+          </InputWrapper>
+        </FilterSelectContainer>
+      </FiltersContainer>
       
       {loading ? (
         <Loading>Loading topics...</Loading>
       ) : error ? (
         <Error>{error}</Error>
-      ) : filteredTopics.length === 0 ? (
-        <EmptyState>
-          {searchQuery || filterSubject 
-            ? 'No topics found matching your filters.' 
-            : 'No topics found. Create your first topic!'}
-        </EmptyState>
       ) : (
-        <TableContainer>
-          <Table>
-            <thead>
-              <tr>
-                <th>Topic Name</th>
-                <th>Subject</th>
-                <th>Questions</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTopics.map(topic => (
-                <tr key={topic.id}>
-                  <td>{topic.topic_name}</td>
-                  <td>{topic.subjects?.subject_name}</td>
-                  <td>{topic.questionCount}</td>
-                  <td>{new Date(topic.created_at).toLocaleDateString()}</td>
-                  <td>
-                    <ActionButtonsContainer>
-                      <ActionButton small onClick={() => handleEditTopic(topic)}>
-                        <FaEdit />
-                      </ActionButton>
-                      <ActionButton 
-                        small 
-                        danger
-                        onClick={() => handleDeleteTopic(topic.id)}
-                        disabled={topic.questionCount > 0}
-                        title={topic.questionCount > 0 ? 'Cannot delete topic with questions' : ''}
-                      >
-                        <FaTrash />
-                      </ActionButton>
-                    </ActionButtonsContainer>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </TableContainer>
+        <ContentContainer>
+          {/* Organized view by subject */}
+          <OrganizedView>
+            {subjects.map(subject => (
+              <SubjectSection key={subject.id}>
+                <SubjectHeader onClick={() => toggleSubjectExpansion(subject.id)}>
+                  <SubjectInfo>
+                    <SubjectName>{subject.subject_name}</SubjectName>
+                    <TopicCount>
+                      {topicsBySubject[subject.id]?.length || 0} topics
+                    </TopicCount>
+                  </SubjectInfo>
+                  {expandedSubjects[subject.id] ? <FaChevronUp /> : <FaChevronDown />}
+                </SubjectHeader>
+                
+                {expandedSubjects[subject.id] && (
+                  <TopicsList>
+                    {topicsBySubject[subject.id]?.length > 0 ? (
+                      topicsBySubject[subject.id].map(topic => (
+                        <TopicCard key={topic.id}>
+                          <TopicInfo>
+                            <TopicName>{topic.topic_name}</TopicName>
+                            <QuestionCount count={topic.questionCount}>
+                              {topic.questionCount} questions
+                            </QuestionCount>
+                          </TopicInfo>
+                          <TopicActions>
+                            <ActionIcon onClick={() => handleEditTopic(topic)}>
+                              <FaEdit />
+                            </ActionIcon>
+                            <ActionIcon danger onClick={() => handleDeleteTopic(topic)}>
+                              <FaTrash />
+                            </ActionIcon>
+                          </TopicActions>
+                        </TopicCard>
+                      ))
+                    ) : (
+                      <EmptyTopics>No topics found for this subject</EmptyTopics>
+                    )}
+                  </TopicsList>
+                )}
+              </SubjectSection>
+            ))}
+          </OrganizedView>
+        </ContentContainer>
       )}
       
-      {isModalOpen && (
-        <Modal>
-          <ModalContent>
+      {/* Add/Edit Topic Modal */}
+      {showAddModal && (
+        <Modal onClick={() => setShowAddModal(false)}>
+          <ModalContent onClick={e => e.stopPropagation()}>
             <ModalHeader>
-              <h2>{currentTopic ? 'Edit Topic' : 'Create Topic'}</h2>
-              <CloseButton onClick={() => setIsModalOpen(false)}>×</CloseButton>
+              <h2>{currentTopic ? 'Edit Topic' : 'Add New Topic'}</h2>
+              <CloseButton onClick={() => setShowAddModal(false)}>
+                <FaTimes />
+              </CloseButton>
             </ModalHeader>
+            
             <ModalBody>
-              <FormGroup>
-                <Label htmlFor="topic_name">Topic Name</Label>
-                <Input
-                  id="topic_name"
-                  name="topic_name"
-                  value={formData.topic_name}
-                  onChange={handleInputChange}
-                  error={formErrors.topic_name}
-                  placeholder="Enter topic name"
-                />
-                {formErrors.topic_name && <ErrorText>{formErrors.topic_name}</ErrorText>}
-              </FormGroup>
-              
-              <FormGroup>
-                <Label htmlFor="subject_id">Subject</Label>
-                <Select
-                  id="subject_id"
-                  name="subject_id"
-                  value={formData.subject_id}
-                  onChange={handleInputChange}
-                  error={formErrors.subject_id}
-                >
-                  <option value="" disabled>Select Subject</option>
-                  {subjects.map(subject => (
-                    <option key={subject.id} value={subject.id}>
-                      {subject.subject_name}
-                    </option>
-                  ))}
-                </Select>
-                {formErrors.subject_id && <ErrorText>{formErrors.subject_id}</ErrorText>}
-              </FormGroup>
-              
-              <ButtonGroup>
-                <ActionButton onClick={() => setIsModalOpen(false)}>
-                  Cancel
-                </ActionButton>
-                <ActionButton primary onClick={handleSubmit}>
-                  {currentTopic ? 'Update Topic' : 'Create Topic'}
-                </ActionButton>
-              </ButtonGroup>
+              <form onSubmit={handleSubmit}>
+                <FormGroup>
+                  <Label htmlFor="topic_name">Topic Name</Label>
+                  <Input
+                    id="topic_name"
+                    name="topic_name"
+                    value={formData.topic_name}
+                    onChange={handleInputChange}
+                    placeholder="Enter topic name"
+                    required
+                  />
+                </FormGroup>
+                
+                <FormGroup>
+                  <Label htmlFor="subject_id">Subject</Label>
+                  <Select>
+                    <select
+                      id="subject_id"
+                      name="subject_id"
+                      value={formData.subject_id}
+                      onChange={handleInputChange}
+                      required
+                    >
+                      <option value="">Select Subject</option>
+                      {subjects.map(subject => (
+                        <option key={subject.id} value={subject.id}>
+                          {subject.subject_name}
+                        </option>
+                      ))}
+                    </select>
+                  </Select>
+                </FormGroup>
+                
+                <ButtonGroup>
+                  <Button type="button" onClick={() => setShowAddModal(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" primary>
+                    {currentTopic ? 'Update Topic' : 'Add Topic'}
+                  </Button>
+                </ButtonGroup>
+              </form>
             </ModalBody>
           </ModalContent>
         </Modal>
       )}
+      
+      {/* Confirmation Modal for Delete */}
+      <ConfirmationModal
+        isOpen={showDeleteConfirmation}
+        onClose={() => setShowDeleteConfirmation(false)}
+        onConfirm={confirmDeleteTopic}
+        title="Delete Topic"
+        message={`Are you sure you want to delete "${topicToDelete?.topic_name}"? This will also delete all associated questions. This action cannot be undone.`}
+      />
     </Container>
   );
 };
 
-// Your existing styled components
+// Styled Components
 const Container = styled.div`
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+`;
+
+const Header = styled.div`
   display: flex;
-  flex-direction: column;
-  gap: 20px;
-`;
-
-const TableContainer = styled.div`
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
-`;
-
-const Table = styled.table`
-  width: 100%;
-  border-collapse: collapse;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
   
-  th, td {
-    padding: 16px;
-    text-align: left;
-    border-bottom: 1px solid ${colors.borderPrimary};
+  h1 {
+    ${typography.headingLg || 'font-size: 1.875rem; font-weight: 700;'};
+    color: ${colors.textPrimary || '#1f2937'};
+    margin: 0;
   }
-  
-  th {
-    ${typography.textSmBold};
-    color: ${colors.textSecondary};
-    background-color: ${colors.backgroundSecondary};
-  }
-  
-  td {
-    ${typography.textMdRegular};
-    color: ${colors.textPrimary};
-  }
-  
-  tbody tr:hover {
-    background-color: ${colors.backgroundSecondary}40;
-  }
-`;
-
-const ActionButtonsContainer = styled.div`
-  display: flex;
-  gap: 8px;
 `;
 
 const ActionButton = styled.button`
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-  padding: ${props => props.small ? '8px' : '10px 16px'};
-  border-radius: 6px;
-  ${props => props.small ? typography.textSmMedium : typography.textMdMedium};
-  cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
-  background-color: ${props => {
-    if (props.disabled) return '#e0e0e0';
-    if (props.danger) return colors.accentError || '#f44336';
-    if (props.primary) return colors.brandPrimary;
-    return colors.backgroundSecondary;
-  }};
-  color: ${props => {
-    if (props.disabled) return colors.textSecondary;
-    if (props.danger || props.primary) return 'white';
-    return colors.textPrimary;
-  }};
+  padding: 10px 16px;
+  border-radius: 8px;
   border: none;
+  background-color: ${props => props.primary ? colors.brandPrimary || '#4f46e5' : 'white'};
+  color: ${props => props.primary ? 'white' : colors.textPrimary || '#1f2937'};
+  ${typography.textMdMedium || 'font-size: 1rem; font-weight: 500;'};
+  cursor: pointer;
+  transition: all 0.2s;
   
   &:hover {
-    opacity: ${props => props.disabled ? 1 : 0.9};
+    background-color: ${props => props.primary ? colors.brandPrimaryDark || '#4338ca' : '#f9fafb'};
+    transform: translateY(-1px);
+  }
+  
+  &:active {
+    transform: translateY(0);
   }
 `;
 
-const ControlsBar = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-`;
-
-// Add these styled components
-const FilterContainer = styled.div`
-  display: flex;
+const FiltersContainer = styled.div`
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 16px;
+  margin-bottom: 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 `;
 
-const SearchContainer = styled.div`
-  position: relative;
-  width: 300px;
+const FilterItem = styled.div`
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   
-  .search-icon {
-    position: absolute;
-    top: 50%;
-    left: 12px;
-    transform: translateY(-50%);
-    color: ${colors.textSecondary};
+  label {
+    display: block;
+    ${typography.textSmBold || 'font-size: 0.75rem; font-weight: 600;'};
+    color: ${colors.textSecondary || '#6b7280'};
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
+`;
+
+const InputWrapper = styled.div`
+  position: relative;
+  width: 100%;
+`;
+
+const SearchContainer = styled(FilterItem)``;
+const FilterSelectContainer = styled(FilterItem)``;
+
+const SearchIcon = styled.div`
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: ${colors.textSecondary || '#6b7280'};
+  pointer-events: none;
+  z-index: 1;
 `;
 
 const SearchInput = styled.input`
   width: 100%;
-  padding: 10px 12px 10px 40px;
-  border-radius: 6px;
-  border: 1px solid ${colors.borderPrimary};
-  ${typography.textMd};
-  
-  &:focus {
-    outline: none;
-    border-color: ${colors.brandPrimary};
-  }
-`;
-
-const SelectContainer = styled.div`
-  position: relative;
-  width: 200px;
-  
-  .filter-icon {
-    position: absolute;
-    top: 50%;
-    left: 12px;
-    transform: translateY(-50%);
-    color: ${colors.textSecondary};
-  }
-`;
-
-const Select = styled.select`
-  width: 100%;
-  padding: 10px 12px 10px ${props => props.error ? '12px' : '40px'};
-  border-radius: 6px;
-  border: 1px solid ${props => props.error ? colors.accentError : colors.borderPrimary};
-  ${typography.textMd};
-  
-  &:focus {
-    outline: none;
-    border-color: ${colors.brandPrimary};
-  }
-`;
-
-const EmptyState = styled.div`
-  text-align: center;
-  padding: 40px;
-  ${typography.textLgMedium};
-  color: ${colors.textSecondary};
-  background-color: white;
+  height: 40px;
+  padding: 0 36px 0 36px;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border: 1px solid ${colors.borderPrimary || '#e5e7eb'};
+  ${typography.textMdRegular || 'font-size: 1rem;'};
+  color: ${colors.textPrimary || '#1f2937'};
+  background-color: ${colors.backgroundSecondary || '#f9fafb'};
+  
+  &:focus {
+    outline: none;
+    border-color: ${colors.brandPrimary || '#4f46e5'};
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+    background-color: white;
+  }
+`;
+
+const ClearButton = styled.button`
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: ${colors.textSecondary || '#6b7280'};
+  cursor: pointer;
+  z-index: 1;
+  
+  &:hover {
+    color: ${colors.textPrimary || '#1f2937'};
+  }
+`;
+
+const FilterSelect = styled.select`
+  width: 100%;
+  height: 40px;
+  padding: 0 36px 0 12px;
+  border-radius: 8px;
+  border: 1px solid ${colors.borderPrimary || '#e5e7eb'};
+  ${typography.textMdRegular || 'font-size: 1rem;'};
+  color: ${colors.textPrimary || '#1f2937'};
+  background-color: ${colors.backgroundSecondary || '#f9fafb'};
+  appearance: none;
+  cursor: pointer;
+  
+  &:focus {
+    outline: none;
+    border-color: ${colors.brandPrimary || '#4f46e5'};
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+    background-color: white;
+  }
+`;
+
+const SelectIcon = styled.div`
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: ${colors.textSecondary || '#6b7280'};
+  pointer-events: none;
+  z-index: 1;
+`;
+
+const ContentContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+`;
+
+const OrganizedView = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+`;
+
+const SubjectSection = styled.div`
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+`;
+
+const SubjectHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background-color: ${colors.backgroundSecondary || '#f9fafb'};
+  cursor: pointer;
+  transition: background-color 0.2s;
+  
+  &:hover {
+    background-color: #f3f4f6;
+  }
+`;
+
+const SubjectInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+`;
+
+const SubjectName = styled.h3`
+  ${typography.textLgBold || 'font-size: 1.125rem; font-weight: 700;'};
+  color: ${colors.textPrimary || '#1f2937'};
+  margin: 0;
+`;
+
+const TopicCount = styled.span`
+  ${typography.textSmRegular || 'font-size: 0.875rem;'};
+  color: ${colors.textSecondary || '#6b7280'};
+  background-color: #e5e7eb;
+  padding: 4px 8px;
+  border-radius: 16px;
+`;
+
+const TopicsList = styled.div`
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+`;
+
+const TopicCard = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background-color: white;
+  border: 1px solid ${colors.borderPrimary || '#e5e7eb'};
+  border-radius: 8px;
+  transition: all 0.2s;
+  
+  &:hover {
+    border-color: ${colors.brandPrimary || '#4f46e5'};
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    transform: translateY(-2px);
+  }
+`;
+
+const TopicInfo = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+
+const TopicName = styled.h4`
+  ${typography.textMdMedium || 'font-size: 1rem; font-weight: 500;'};
+  color: ${colors.textPrimary || '#1f2937'};
+  margin: 0;
+`;
+
+const QuestionCount = styled.span`
+  ${typography.textSmRegular || 'font-size: 0.875rem;'};
+  color: ${colors.textSecondary || '#6b7280'};
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  
+  &::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: ${props => props.count > 0 ? '#10b981' : '#9ca3af'};
+  }
+`;
+
+const TopicActions = styled.div`
+  display: flex;
+  gap: 8px;
+`;
+
+const ActionIcon = styled.button`
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: ${props => props.danger ? '#fee2e2' : '#f3f4f6'};
+  color: ${props => props.danger ? '#dc2626' : colors.textSecondary || '#6b7280'};
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  
+  &:hover {
+    background-color: ${props => props.danger ? '#fecaca' : '#e5e7eb'};
+    color: ${props => props.danger ? '#b91c1c' : colors.textPrimary || '#1f2937'};
+    transform: translateY(-1px);
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+`;
+
+const EmptyTopics = styled.div`
+  padding: 16px;
+  text-align: center;
+  ${typography.textMdRegular || 'font-size: 1rem;'};
+  color: ${colors.textSecondary || '#6b7280'};
+  background-color: ${colors.backgroundSecondary || '#f9fafb'};
+  border-radius: 8px;
 `;
 
 const Loading = styled.div`
   text-align: center;
   padding: 40px;
-  ${typography.textLgMedium};
-  color: ${colors.textSecondary};
+  ${typography.textLgMedium || 'font-size: 1.125rem; font-weight: 500;'};
+  color: ${colors.textSecondary || '#6b7280'};
 `;
 
 const Error = styled.div`
   text-align: center;
   padding: 40px;
-  ${typography.textLgMedium};
-  color: ${colors.accentError || 'red'};
+  ${typography.textLgMedium || 'font-size: 1.125rem; font-weight: 500;'};
+  color: ${colors.accentError || '#dc2626'};
 `;
 
 const Modal = styled.div`
@@ -512,31 +722,46 @@ const Modal = styled.div`
   right: 0;
   bottom: 0;
   background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 `;
 
 const ModalContent = styled.div`
   background-color: white;
-  border-radius: 8px;
+  border-radius: 12px;
   width: 500px;
   max-width: 90%;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  animation: slideUp 0.3s ease-out;
+  
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
 `;
 
 const ModalHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
-  border-bottom: 1px solid ${colors.borderPrimary};
+  padding: 20px 24px;
+  border-bottom: 1px solid ${colors.borderPrimary || '#e5e7eb'};
+  background-color: ${colors.backgroundPrimary || '#ffffff'};
   
   h2 {
-    ${typography.textLgBold};
+    ${typography.textXlBold || 'font-size: 1.25rem; font-weight: 700;'};
     margin: 0;
-    color: ${colors.textPrimary};
+    color: ${colors.textPrimary || '#1f2937'};
   }
 `;
 
@@ -547,50 +772,156 @@ const ModalBody = styled.div`
 const CloseButton = styled.button`
   background: none;
   border: none;
-  font-size: 24px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  color: ${colors.textSecondary};
+  color: ${colors.textSecondary || '#6b7280'};
+  transition: all 0.2s;
   
   &:hover {
-    color: ${colors.textPrimary};
+    background-color: ${colors.backgroundSecondary || '#f3f4f6'};
+    color: ${colors.textPrimary || '#1f2937'};
   }
 `;
 
 const FormGroup = styled.div`
-  margin-bottom: 16px;
+  margin-bottom: 24px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
 `;
 
 const Label = styled.label`
   display: block;
-  ${typography.textSmBold};
+  ${typography.textSmBold || 'font-size: 0.875rem; font-weight: 600;'};
   margin-bottom: 8px;
-  color: ${colors.textSecondary};
+  color: ${colors.textPrimary || '#1f2937'};
 `;
 
 const Input = styled.input`
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 6px;
-  border: 1px solid ${props => props.error ? colors.accentError : colors.borderPrimary};
-  ${typography.textMd};
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid ${colors.borderPrimary || '#e5e7eb'};
+  ${typography.textMdRegular || 'font-size: 1rem;'};
+  color: ${colors.textPrimary || '#1f2937'};
+  transition: all 0.2s;
   
   &:focus {
     outline: none;
-    border-color: ${colors.brandPrimary};
+    border-color: ${colors.brandPrimary || '#4f46e5'};
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  }
+  
+  &::placeholder {
+    color: ${colors.textTertiary || '#9ca3af'};
   }
 `;
 
-const ErrorText = styled.p`
-  ${typography.textSmMedium};
-  color: ${colors.accentError};
-  margin: 4px 0 0 0;
+const Select = styled.div`
+  position: relative;
+  
+  select {
+    appearance: none;
+    width: 100%;
+    padding: 12px 16px;
+    padding-right: 40px;
+    border-radius: 8px;
+    border: 1px solid ${colors.borderPrimary || '#e5e7eb'};
+    background-color: white;
+    ${typography.textMdRegular || 'font-size: 1rem;'};
+    color: ${colors.textPrimary || '#1f2937'};
+    cursor: pointer;
+    transition: all 0.2s;
+    
+    &:focus {
+      outline: none;
+      border-color: ${colors.brandPrimary || '#4f46e5'};
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    }
+  }
+  
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid ${colors.textSecondary || '#6b7280'};
+    pointer-events: none;
+  }
 `;
 
 const ButtonGroup = styled.div`
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 24px;
+  margin-top: 32px;
 `;
+
+const Button = styled.button`
+  padding: 12px 20px;
+  border-radius: 8px;
+  border: none;
+  background-color: ${props => props.primary ? colors.brandPrimary || '#4f46e5' : colors.backgroundSecondary || '#f3f4f6'};
+  color: ${props => props.primary ? 'white' : colors.textPrimary || '#1f2937'};
+  ${typography.textMdMedium || 'font-size: 1rem; font-weight: 500;'};
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  
+  &:hover {
+    background-color: ${props => props.primary ? colors.brandPrimaryDark || '#4338ca' : '#e5e7eb'};
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+  
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px ${props => props.primary ? 'rgba(79, 70, 229, 0.4)' : 'rgba(156, 163, 175, 0.4)'};
+  }
+`;
+
+const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message }) => {
+  if (!isOpen) return null;
+  
+  return (
+    <Modal onClick={onClose}>
+      <ModalContent onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+        <ModalHeader>
+          <h2>{title}</h2>
+          <CloseButton onClick={onClose}>
+            <FaTimes />
+          </CloseButton>
+        </ModalHeader>
+        <ModalBody>
+          <p style={{ marginBottom: '24px', color: colors.textSecondary || '#6b7280' }}>{message}</p>
+          <ButtonGroup>
+            <Button onClick={onClose}>Cancel</Button>
+            <Button primary onClick={onConfirm} style={{ backgroundColor: '#ef4444' }}>
+              <FaTrash /> Delete
+            </Button>
+          </ButtonGroup>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+  );
+};
 
 export default AdminTopics; 

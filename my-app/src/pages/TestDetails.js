@@ -190,8 +190,8 @@ const TestDetails = () => {
               })
               .eq('id', user.id)
               .select('total_xp')
-              .single();
-
+        .single();
+        
             if (profileError) throw profileError;
 
             setXpEarned(earnedXP);
@@ -199,10 +199,10 @@ const TestDetails = () => {
             setShowXPPopup(true);
           }
         }
-      } catch (error) {
-        console.error('Error fetching test details:', error);
+    } catch (error) {
+      console.error('Error fetching test details:', error);
         setError(error.message);
-      } finally {
+    } finally {
         setLoading(false);
       }
     };
@@ -290,12 +290,12 @@ const TestDetails = () => {
   if (loading) return <LoadingScreen />;
   if (error) return <div style={styles.error}>{error}</div>;
   if (!testData) return <div style={styles.error}>Test not found</div>;
-
-  return (
+    
+    return (
     <div style={styles.container}>
       <button onClick={() => navigate('/dashboard')} style={styles.backButton}>
         ← Back to Dashboard
-      </button>
+            </button>
 
       <div style={styles.content}>
         <div style={styles.header}>
@@ -357,7 +357,7 @@ const TestDetails = () => {
                     {attemptStats.wrongAnswers} (-{attemptStats.negativeMarks})
                   </span>
                 </span>
-              </div>
+      </div>
               
               <div style={styles.statItem}>
                 <span style={styles.statLabel}>Unanswered</span>
@@ -379,14 +379,14 @@ const TestDetails = () => {
             <div style={styles.actions}>
               <button onClick={handleViewSolutions} style={styles.secondaryButton}>
                 View Solutions
-              </button>
-            </div>
-          </div>
+          </button>
+        </div>
+      </div>
         )}
 
         <button onClick={handleStartTest} style={styles.startButton}>
           {lastAttempt ? 'Retake Test' : 'Start Test'}
-        </button>
+          </button>
       </div>
 
       <ConfirmationModal 
@@ -403,8 +403,8 @@ const TestDetails = () => {
           onClose={() => setShowXPPopup(false)}
         />
       )}
-    </div>
-  );
+      </div>
+    );
 };
 
 const ConfirmationModal = ({ isOpen, onClose, onContinue, onStartNew }) => {
@@ -430,13 +430,13 @@ const ConfirmationModal = ({ isOpen, onClose, onContinue, onStartNew }) => {
           >
             Start New Test
           </button>
-          <button 
+            <button 
             onClick={onClose}
             style={modalStyles.cancelButton}
           >
             Cancel
-          </button>
-        </div>
+            </button>
+          </div>
       </div>
     </div>
   );
@@ -730,4 +730,4 @@ const xpPopupStyles = {
   },
 };
 
-export default TestDetails;
+export default TestDetails; 

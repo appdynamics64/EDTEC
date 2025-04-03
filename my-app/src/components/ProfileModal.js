@@ -73,9 +73,9 @@ const ProfileModal = ({ isOpen, onClose, userData, onUpdate }) => {
     const validTypes = ['image/jpeg', 'image/png', 'image/gif'];
     if (!validTypes.includes(file.type)) {
       setUploadError('Please upload a valid image file (JPEG, PNG, or GIF)');
-      return;
-    }
-    
+        return;
+      }
+
     if (file.size > 5 * 1024 * 1024) { // 5MB limit
       setUploadError('Image size should be less than 5MB');
       return;
@@ -130,7 +130,7 @@ const ProfileModal = ({ isOpen, onClose, userData, onUpdate }) => {
         .storage
         .from('avatars')
         .getPublicUrl(filePath);
-      
+
       setAvatarUrl(publicUrl);
       setUploadSuccess(true);
     } catch (error) {
@@ -169,14 +169,14 @@ const ProfileModal = ({ isOpen, onClose, userData, onUpdate }) => {
       if (avatarUrl && avatarUrl !== userData.profile_photo_url) {
         updates.profile_photo_url = avatarUrl;
       }
-      
+
       const { error } = await supabase
         .from('profiles')
         .update(updates)
         .eq('id', userData.id);
-      
+
       if (error) throw error;
-      
+
       // Call the onUpdate callback with the updated data
       onUpdate({
         ...userData,
@@ -249,8 +249,8 @@ const ProfileModal = ({ isOpen, onClose, userData, onUpdate }) => {
               </AvatarSelectorContainer>
             )}
             
-            <input
-              type="file"
+                <input
+                  type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
               accept="image/jpeg,image/png,image/gif"
@@ -283,9 +283,9 @@ const ProfileModal = ({ isOpen, onClose, userData, onUpdate }) => {
             <Label htmlFor="name">Name</Label>
             <Input
               id="name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               placeholder="Your name"
             />
           </FormGroup>
@@ -583,10 +583,10 @@ const UploadStatus = ({ success, error, children, ...rest }) => (
     data-success={success ? "true" : undefined}
     data-error={error ? "true" : undefined}
     style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      marginTop: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginTop: '12px',
       padding: '8px 12px',
       borderRadius: '6px',
       backgroundColor: error ? '#FEF2F2' : success ? '#ECFDF5' : '#F3F4F6',
