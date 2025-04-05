@@ -97,11 +97,11 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
-    if (!user) {
+      if (!user) {
       // Don't navigate immediately, wait for auth to complete
-      return;
-    }
-    
+        return;
+      }
+
     const loadDashboardData = async () => {
       try {
         setLoading(true);
@@ -111,7 +111,7 @@ const Dashboard = () => {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('id, name, selected_exam_id, profile_photo_url')
-          .eq('id', user.id)
+        .eq('id', user.id)
           .maybeSingle();
 
         if (profileError) throw profileError;
@@ -411,12 +411,12 @@ const Dashboard = () => {
       {/* New Navigation Bar */}
       <nav style={styles.navbar}>
         <div style={styles.navLeft}>
-          <div style={styles.logo}>
+        <div style={styles.logo}>
             PREP<span style={styles.logoHighlight}>HUB</span>
-          </div>
+        </div>
           <div style={styles.examSelector}>
             <span style={styles.examName}>{selectedExam?.exam_name}</span>
-            <button 
+            <button
               onClick={() => setIsChangingExam(true)}
               style={styles.changeExamButtonSmall}
             >
@@ -427,43 +427,43 @@ const Dashboard = () => {
         <div style={styles.userProfile}>
           <div 
             style={styles.profileSection} 
-            onClick={() => setShowProfileMenu(!showProfileMenu)}
-          >
+              onClick={() => setShowProfileMenu(!showProfileMenu)} 
+            >
             {userData?.profile_photo_url ? (
-              <img 
+                <img 
                 src={userData.profile_photo_url} 
                 alt={userData?.name || 'User'} 
-                style={styles.avatarImage} 
-              />
-            ) : (
+                  style={styles.avatarImage}
+                />
+              ) : (
               <div style={styles.avatarPlaceholder}>
                 {userData?.name ? userData.name.charAt(0).toUpperCase() : 'U'}
               </div>
             )}
             <span style={styles.userName}>{userData?.name || 'User'}</span>
-          </div>
-          
-          {showProfileMenu && (
-            <div style={styles.profileMenu}>
+            </div>
+            
+            {showProfileMenu && (
+              <div style={styles.profileMenu}>
               <button 
                 style={styles.menuItem}
-                onClick={() => {
+                  onClick={() => {
                   setShowProfileModal(true);
-                  setShowProfileMenu(false);
-                }}
-              >
+                    setShowProfileMenu(false);
+                  }}
+                >
                 <FaUserCog style={{ marginRight: '8px' }} />
                 Edit Profile
               </button>
               <button 
                 style={styles.menuItem}
-                onClick={handleLogout}
-              >
+                  onClick={handleLogout}
+                >
                 Logout
               </button>
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
       </nav>
 
       {/* Main Content */}
@@ -488,41 +488,41 @@ const Dashboard = () => {
               ))}
             </div>
           </div>
-
+          
           <div style={styles.testGrid}>
             {filteredTests.map(test => renderTestCard(test))}
+            </div>
           </div>
-        </div>
       </main>
 
       {/* Admin Console Link at Bottom */}
       <footer style={styles.footer}>
-        <button 
+            <button 
           onClick={handleAdminClick}
           style={styles.adminLink}
-        >
+            >
           <FaUserCog style={{ marginRight: '8px' }} />
           Admin Console
-        </button>
+            </button>
       </footer>
 
       {/* Chatbot Button */}
       <div style={styles.chatbotButton}>
-        <button
+                <button 
           onClick={() => navigate('/chatbot')}
           style={styles.chatButton}
           aria-label="Chat with AI assistant"
         >
           <FaComments size={24} />
-        </button>
-      </div>
-      
+                </button>
+          </div>
+
       {/* Existing modals */}
       {showProfileModal && (
-        <ProfileModal
+      <ProfileModal
           isOpen={showProfileModal}
           onClose={() => setShowProfileModal(false)}
-          userData={userData}
+        userData={userData}
           onUpdate={handleProfileUpdate}
         />
       )}
@@ -788,7 +788,7 @@ const styles = {
     color: '#666',
   },
   progressBar: {
-    height: '4px',
+      height: '4px',
     backgroundColor: '#f1f1f1',
     borderRadius: '2px',
     marginTop: '8px',

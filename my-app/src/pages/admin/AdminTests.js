@@ -100,7 +100,7 @@ const AdminTests = () => {
     try {
       const { data, error } = await supabase
         .from('exams')
-        .select('*')
+        .select('id, exam_name')
         .order('exam_name');
       
       if (error) throw error;
@@ -560,6 +560,12 @@ const AdminTests = () => {
     }
   };
 
+  // Define test types
+  const testTypes = [
+    { value: 'recommended', label: 'Recommended' },
+    { value: 'custom', label: 'Custom' }
+  ];
+
   return (
     <Container>
       <Header>
@@ -724,36 +730,47 @@ const AdminTests = () => {
                   </FormGroup>
                   
                   <FormGroup>
-                    <Label htmlFor="exam_id">Exam</Label>
-                    <Select
-                      id="exam_id"
-                      name="exam_id"
-                      value={formData.exam_id}
-                      onChange={handleInputChange}
-                      error={!!formErrors.exam_id}
-                    >
-                      <option value="">Select an exam</option>
-                      {exams.map(exam => (
-                        <option key={exam.id} value={exam.id}>
-                          {exam.exam_name}
-                        </option>
-                      ))}
-                    </Select>
+                    <Label htmlFor="exam">Select Exam</Label>
+                    <SelectContainer>
+                      <Select
+                        id="exam"
+                        name="exam_id"
+                        value={formData.exam_id}
+                        onChange={(e) => setFormData({ ...formData, exam_id: e.target.value })}
+                      >
+                        <option value="">Select an exam</option>
+                        {exams.map((exam) => (
+                          <option key={exam.id} value={exam.id}>
+                            {exam.exam_name}
+                          </option>
+                        ))}
+                      </Select>
+                      <SelectIcon>
+                        <FaChevronDown />
+                      </SelectIcon>
+                    </SelectContainer>
                     {formErrors.exam_id && <ErrorText>{formErrors.exam_id}</ErrorText>}
                   </FormGroup>
                   
                   <FormGroup>
-                    <Label htmlFor="test-type">Test Type</Label>
-                    <Select
-                      id="test-type"
-                      name="type"
-                      value={formData.type}
-                      onChange={handleInputChange}
-                      error={formErrors.type}
-                    >
-                      <option value="recommended">Recommended</option>
-                      <option value="custom">Custom</option>
-                    </Select>
+                    <Label htmlFor="type">Test Type</Label>
+                    <SelectContainer>
+                      <Select
+                        id="type"
+                        name="type"
+                        value={formData.type}
+                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                      >
+                        {testTypes.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.label}
+                          </option>
+                        ))}
+                      </Select>
+                      <SelectIcon>
+                        <FaChevronDown />
+                      </SelectIcon>
+                    </SelectContainer>
                     {formErrors.type && <ErrorText>{formErrors.type}</ErrorText>}
                   </FormGroup>
                   
@@ -1106,6 +1123,10 @@ const FilterSelect = styled.select`
   }
 `;
 
+const SelectContainer = styled.div`
+  position: relative;
+`;
+
 const SelectIcon = styled.div`
   position: absolute;
   right: 12px;
@@ -1384,41 +1405,23 @@ const Input = styled.input`
   }
 `;
 
-const Select = styled.div`
-  position: relative;
+const Select = styled.select`
+  width: 100%;
+  height: 40px;
+  padding: 0 36px 0 12px;
+  border-radius: 8px;
+  border: 1px solid ${colors.borderPrimary || '#e5e7eb'};
+  ${typography.textMdRegular || 'font-size: 1rem;'};
+  color: ${colors.textPrimary || '#1f2937'};
+  background-color: ${colors.backgroundSecondary || '#f9fafb'};
+  appearance: none;
+  cursor: pointer;
   
-  select {
-    appearance: none;
-    width: 100%;
-    padding: 12px 16px;
-    padding-right: 40px;
-    border-radius: 8px;
-    border: 1px solid ${props => props.error ? colors.accentError || '#ef4444' : colors.borderPrimary || '#e5e7eb'};
+  &:focus {
+    outline: none;
+    border-color: ${colors.brandPrimary || '#4f46e5'};
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
     background-color: white;
-    ${typography.textMdRegular || 'font-size: 1rem;'};
-    color: ${colors.textPrimary || '#1f2937'};
-    cursor: pointer;
-    transition: all 0.2s;
-    
-    &:focus {
-      outline: none;
-      border-color: ${colors.brandPrimary || '#4f46e5'};
-      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-    }
-  }
-  
-  &::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    right: 16px;
-    transform: translateY(-50%);
-    width: 0;
-    height: 0;
-    border-left: 6px solid transparent;
-    border-right: 6px solid transparent;
-    border-top: 6px solid ${colors.textSecondary || '#6b7280'};
-    pointer-events: none;
   }
 `;
 
