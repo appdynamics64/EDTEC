@@ -10,7 +10,8 @@ import {
   FaQuestion, 
   FaBoxes, 
   FaLayerGroup,
-  FaCalculator 
+  FaCalculator,
+  FaRobot
 } from 'react-icons/fa';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
@@ -91,6 +92,13 @@ const AdminConsole = () => {
         >
           <FaCalculator /> Scoring Rules
         </NavItem>
+
+        <NavItem 
+          active={activeTab === 'ai-ingestion'} 
+          onClick={() => navigate('/admin/ai-ingestion')}
+        >
+          <FaRobot /> AI Ingestion Tool
+        </NavItem>
         
         <BackButton onClick={() => navigate('/dashboard')}>
           <FaArrowLeft /> Back to App
@@ -128,6 +136,7 @@ const getActiveTabTitle = (tab) => {
     case 'subjects': return 'Manage Subjects';
     case 'topics': return 'Manage Topics';
     case 'scoring': return 'Manage Scoring Rules';
+    case 'ai-ingestion': return 'AI Question Ingestion Tool';
     default: return 'Admin Console';
   }
 }

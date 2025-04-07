@@ -387,7 +387,7 @@ const TestDetails = () => {
         <button onClick={handleStartTest} style={styles.startButton}>
           {lastAttempt ? 'Retake Test' : 'Start Test'}
           </button>
-      </div>
+        </div>
 
       <ConfirmationModal 
         isOpen={showConfirmModal}

@@ -24,6 +24,7 @@ import TestSolution from './pages/TestSolution';
 import AdminConsole from './pages/AdminConsole';
 import PrivateRoute from './components/PrivateRoute';
 import Chatbot from './pages/Chatbot';
+import AIIngestionTool from './pages/admin/AIIngestionTool';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
@@ -144,6 +145,10 @@ function App() {
       {
         path: "/admin",
         element: <PrivateRoute><AdminConsole /></PrivateRoute>
+      },
+      {
+        path: "/admin/ai-ingestion",
+        element: <PrivateRoute><AIIngestionTool /></PrivateRoute>
       },
       {
         path: "/test-solution/:testId/:attemptId",
