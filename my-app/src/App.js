@@ -24,6 +24,7 @@ import TestSolution from './pages/TestSolution';
 import AdminConsole from './pages/AdminConsole';
 import PrivateRoute from './components/PrivateRoute';
 import Chatbot from './pages/Chatbot';
+import Leaderboard from './pages/Leaderboard';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
@@ -152,6 +153,10 @@ function App() {
       {
         path: "/chatbot",
         element: <PrivateRoute><Chatbot /></PrivateRoute>
+      },
+      {
+        path: "/leaderboard",
+        element: <PrivateRoute><Leaderboard /></PrivateRoute>
       },
       {
         path: "*",
