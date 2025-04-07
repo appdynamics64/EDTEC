@@ -10,6 +10,7 @@ import {
 import { supabase } from './config/supabaseClient';
 import useAuth from './hooks/useAuth';
 import { routerOptions } from './config/routerConfig';
+import Leaderboard from './pages/Leaderboard'; // Adjust the path as necessary
 
 // Import all components
 import Login from './pages/Login';
@@ -144,10 +145,6 @@ function App() {
       {
         path: "/admin",
         element: <PrivateRoute><AdminConsole /></PrivateRoute>
-      },
-      {
-        path: "/admin/ai-ingestion",
-        element: <PrivateRoute><AIIngestionTool /></PrivateRoute>
       },
       {
         path: "/test-solution/:testId/:attemptId",
