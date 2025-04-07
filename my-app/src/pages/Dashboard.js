@@ -424,6 +424,15 @@ const Dashboard = () => {
             </button>
           </div>
         </div>
+        <div style={styles.navRight}>
+          <button 
+            onClick={() => navigate('/leaderboard')}
+            style={styles.leaderboardButton}
+          >
+            <FaTrophy style={{ marginRight: '8px' }} />
+            Leaderboard
+          </button>
+        </div>
         <div style={styles.userProfile}>
           <div 
             style={styles.profileSection} 
@@ -1062,6 +1071,27 @@ const styles = {
     height: '40px',
     borderRadius: '50%',
     objectFit: 'cover',
+  },
+  navRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+  },
+  leaderboardButton: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '8px 16px',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    transition: 'background-color 0.2s',
+    '&:hover': {
+      backgroundColor: '#2563eb',
+    },
   },
 };
 

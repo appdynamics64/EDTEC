@@ -56,7 +56,6 @@ const TestSolution = () => {
       if (hasExistingTransaction) {
         console.log('XP already awarded for this test');
         setXpEarned(xpAmount);
-        setShowXPModal(true);
         return;
       }
 
