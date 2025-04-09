@@ -85,6 +85,9 @@ const Dashboard = () => {
   const [userData, setUserData] = useState(null);
   const [availableExams, setAvailableExams] = useState([]);
   const [isChangingExam, setIsChangingExam] = useState(false);
+  const [showExplanationModal, setShowExplanationModal] = useState(false);
+  const [questionId, setQuestionId] = useState('');
+  const [explanation, setExplanation] = useState(null);
 
   // Filter tests based on activeFilter
   const filteredTests = tests.filter(test => {
@@ -380,6 +383,30 @@ const Dashboard = () => {
     // You might want to refresh other parts of the UI that display user data
   };
 
+  const handleExplainClick = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/chatbot/explain', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question_id: parseInt(questionId) }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch explanation');
+      }
+
+      const data = await response.json();
+      setExplanation(data.explanation);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return <LoadingScreen />;
   }
@@ -546,6 +573,30 @@ const Dashboard = () => {
           }}
           onClose={() => setIsChangingExam(false)}
         />
+      )}
+
+      {showExplanationModal && (
+        <div style={styles.modal}>
+          <div style={styles.modalContent}>
+            <h2>Get Explanation</h2>
+            <input
+              type="number"
+              value={questionId}
+              onChange={(e) => setQuestionId(e.target.value)}
+              placeholder="Enter Question ID"
+              style={styles.input}
+            />
+            <button onClick={handleExplainClick} style={styles.button}>
+              Get Explanation
+            </button>
+            <button onClick={() => setShowExplanationModal(false)} style={styles.button}>
+              Close
+            </button>
+            {loading && <p>Loading...</p>}
+            {error && <p style={styles.error}>{error}</p>}
+            {explanation && <p style={styles.explanation}>{explanation}</p>}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1092,6 +1143,47 @@ const styles = {
     '&:hover': {
       backgroundColor: '#2563eb',
     },
+  },
+  modal: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    padding: '20px',
+    borderRadius: '8px',
+    width: '400px',
+    textAlign: 'center',
+  },
+  input: {
+    width: '100%',
+    padding: '10px',
+    marginBottom: '10px',
+    borderRadius: '4px',
+    border: '1px solid #ccc',
+  },
+  button: {
+    padding: '10px 20px',
+    margin: '5px',
+    borderRadius: '4px',
+    border: 'none',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    cursor: 'pointer',
+  },
+  error: {
+    color: 'red',
+  },
+  explanation: {
+    marginTop: '10px',
+    textAlign: 'left',
   },
 };
 

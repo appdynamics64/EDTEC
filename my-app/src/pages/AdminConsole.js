@@ -1,35 +1,58 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import styled from 'styled-components';
 import { 
   FaUsers, 
   FaClipboardList, 
-  FaBook, 
-  FaChartBar, 
-  FaArrowLeft, 
   FaQuestion, 
-  FaBoxes, 
-  FaLayerGroup,
+  FaBook, 
+  FaArrowLeft,
+  FaRobot,
+  FaGraduationCap,
   FaCalculator,
-  FaRobot
+  FaUpload
 } from 'react-icons/fa';
-import colors from '../styles/foundation/colors';
-import typography from '../styles/foundation/typography';
-
-// Import admin components
 import AdminUsers from './admin/AdminUsers';
 import AdminTests from './admin/AdminTests';
-import AdminDashboard from './admin/AdminDashboard';
-import AdminExams from './admin/AdminExams';
 import AdminQuestions from './admin/AdminQuestions';
 import AdminSubjects from './admin/AdminSubjects';
 import AdminTopics from './admin/AdminTopics';
+import AdminDashboard from './admin/AdminDashboard';
+import AdminExams from './admin/AdminExams';
+import AIIngestionTool from './admin/AIIngestionTool';
 import AdminScoringRules from './admin/AdminScoringRules';
+import colors from '../styles/foundation/colors';
+import typography from '../styles/foundation/typography';
 
 const AdminConsole = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dashboard');
 
+  const renderContent = () => {
+    switch(activeTab) {
+      case 'dashboard':
+        return <AdminDashboard />;
+      case 'users':
+        return <AdminUsers />;
+      case 'tests':
+        return <AdminTests />;
+      case 'questions':
+        return <AdminQuestions />;
+      case 'subjects':
+        return <AdminSubjects />;
+      case 'topics':
+        return <AdminTopics />;
+      case 'exams':
+        return <AdminExams />;
+      case 'scoring':
+        return <AdminScoringRules />;
+      case 'ai-ingestion':
+        return <AIIngestionTool />;
+      default:
+        return <AdminDashboard />;
+    }
+  };
+    
     return (
     <Container>
       <Sidebar>
@@ -41,7 +64,7 @@ const AdminConsole = () => {
           active={activeTab === 'dashboard'} 
           onClick={() => setActiveTab('dashboard')}
         >
-          <FaChartBar /> Dashboard
+          <FaClipboardList /> Dashboard
         </NavItem>
         
         <NavItem 
@@ -52,17 +75,17 @@ const AdminConsole = () => {
         </NavItem>
         
         <NavItem 
+          active={activeTab === 'exams'} 
+          onClick={() => setActiveTab('exams')}
+        >
+          <FaGraduationCap /> Exams
+        </NavItem>
+        
+        <NavItem 
           active={activeTab === 'tests'} 
           onClick={() => setActiveTab('tests')}
         >
           <FaClipboardList /> Tests
-        </NavItem>
-        
-        <NavItem 
-          active={activeTab === 'exams'} 
-          onClick={() => setActiveTab('exams')}
-        >
-          <FaBook /> Exams
         </NavItem>
         
         <NavItem 
@@ -76,14 +99,14 @@ const AdminConsole = () => {
           active={activeTab === 'subjects'} 
           onClick={() => setActiveTab('subjects')}
         >
-          <FaBoxes /> Subjects
+          <FaBook /> Subjects
         </NavItem>
         
         <NavItem 
           active={activeTab === 'topics'} 
           onClick={() => setActiveTab('topics')}
         >
-          <FaLayerGroup /> Topics
+          <FaBook /> Topics
         </NavItem>
         
         <NavItem 
@@ -92,54 +115,61 @@ const AdminConsole = () => {
         >
           <FaCalculator /> Scoring Rules
         </NavItem>
-
+        
         <NavItem 
           active={activeTab === 'ai-ingestion'} 
-          onClick={() => navigate('/admin/ai-ingestion')}
+          onClick={() => setActiveTab('ai-ingestion')}
         >
           <FaRobot /> AI Ingestion Tool
         </NavItem>
         
+        <NavItem 
+          active={activeTab === 'explain-question'} 
+          onClick={() => navigate('/explain-question')}
+        >
+          <FaQuestion /> AI Explanation Tool
+        </NavItem>
+        
+        <NavItem 
+          onClick={() => navigate('/upload-questions')}
+        >
+          <FaUpload /> Upload Questions
+        </NavItem>
+        
         <BackButton onClick={() => navigate('/dashboard')}>
-          <FaArrowLeft /> Back to App
+          <FaArrowLeft /> Back to Dashboard
         </BackButton>
       </Sidebar>
       
       <Content>
         <Header>
-          <h1>{getActiveTabTitle(activeTab)}</h1>
+          <h1>{getHeaderTitle(activeTab)}</h1>
         </Header>
         
         <ContentArea>
-          {activeTab === 'dashboard' && <AdminDashboard />}
-          {activeTab === 'users' && <AdminUsers />}
-          {activeTab === 'tests' && <AdminTests />}
-          {activeTab === 'exams' && <AdminExams />}
-          {activeTab === 'questions' && <AdminQuestions />}
-          {activeTab === 'subjects' && <AdminSubjects />}
-          {activeTab === 'topics' && <AdminTopics />}
-          {activeTab === 'scoring' && <AdminScoringRules />}
+          {renderContent()}
         </ContentArea>
       </Content>
     </Container>
   );
 };
 
-// Helper function to get the title based on active tab
-const getActiveTabTitle = (tab) => {
+// Helper function to get header title
+const getHeaderTitle = (tab) => {
   switch(tab) {
     case 'dashboard': return 'Admin Dashboard';
     case 'users': return 'Manage Users';
     case 'tests': return 'Manage Tests';
-    case 'exams': return 'Manage Exams';
     case 'questions': return 'Manage Questions';
     case 'subjects': return 'Manage Subjects';
     case 'topics': return 'Manage Topics';
+    case 'exams': return 'Manage Exams';
     case 'scoring': return 'Manage Scoring Rules';
     case 'ai-ingestion': return 'AI Question Ingestion Tool';
+    case 'explain-question': return 'AI Explanation Tool';
     default: return 'Admin Console';
   }
-}
+};
 
 // Styled components
 const Container = styled.div`

@@ -25,6 +25,8 @@ import TestSolution from './pages/TestSolution';
 import AdminConsole from './pages/AdminConsole';
 import PrivateRoute from './components/PrivateRoute';
 import Chatbot from './pages/Chatbot';
+import ExplainQuestion from './pages/ExplainQuestion';
+import UploadQuestions from './pages/UploadQuestions';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
@@ -157,6 +159,14 @@ function App() {
       {
         path: "/leaderboard",
         element: <PrivateRoute><Leaderboard /></PrivateRoute>
+      },
+      {
+        path: "/explain-question",
+        element: <PrivateRoute><ExplainQuestion /></PrivateRoute>
+      },
+      {
+        path: "/upload-questions",
+        element: <PrivateRoute><UploadQuestions /></PrivateRoute>
       },
       {
         path: "*",

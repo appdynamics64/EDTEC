@@ -62,56 +62,60 @@ class ExplainRequest(BaseModel):
 @router.post("/chatbot/explain")
 async def explain_question_endpoint(request: ExplainRequest):
     try:
-        # Fetch question data
+        # Step 1: Fetch question data
         question_response = supabase.from_("questions").select(
-            "question_text, difficulty, explanation, topic_id"
+            "question_text, difficulty, topic_id, explanation"
         ).eq("id", request.question_id).single().execute()
 
-        if question_response.error or not question_response.data:
+        if not question_response.data:
             raise HTTPException(status_code=404, detail="Question not found")
 
         question_data = question_response.data
 
-        # Fetch topic data
+        # Step 2: Check if explanation already exists
+        if question_data.get("explanation"):
+            return {"question_id": request.question_id, "explanation": question_data["explanation"]}
+
+        # Step 3: Fetch additional info with correct column names
         topic_response = supabase.from_("topics").select(
-            "name, subject_id"
+            "topic_name, subject_id"  # Using the correct column name
         ).eq("id", question_data["topic_id"]).single().execute()
 
-        if topic_response.error or not topic_response.data:
+        if not topic_response.data:
             raise HTTPException(status_code=404, detail="Topic not found")
 
         topic_data = topic_response.data
+        topic_name = topic_data["topic_name"]  # Use the correct column name
 
-        # Fetch subject data
         subject_response = supabase.from_("subjects").select(
-            "name"
+            "subject_name"  # Using the correct column name
         ).eq("id", topic_data["subject_id"]).single().execute()
 
-        if subject_response.error or not subject_response.data:
+        if not subject_response.data:
             raise HTTPException(status_code=404, detail="Subject not found")
 
         subject_data = subject_response.data
+        subject_name = subject_data["subject_name"]  # Use the correct column name
 
-        # Fetch question metadata
         metadata_response = supabase.from_("question_metadata").select(
             "bloom_level, skill_tags"
         ).eq("question_id", request.question_id).single().execute()
 
-        if metadata_response.error or not metadata_response.data:
+        if not metadata_response.data:
             raise HTTPException(status_code=404, detail="Metadata not found")
 
         metadata_data = metadata_response.data
 
-        # Construct the GPT-4 prompt
+        # Step 4: Construct the GPT-4 prompt
         prompt = (
             f"Please explain the following question in simple language for a student preparing for SSC CGL:\n\n"
             f"Question: {question_data['question_text']}\n"
-            f"Options: {question_data.get('options', 'N/A')}\n"
-            f"Topic: {topic_data['name']}, Difficulty: {question_data['difficulty']}, "
-            f"Bloom Level: {metadata_data['bloom_level']}\n"
+            f"Topic: {topic_name}, Subject: {subject_name}, "
+            f"Difficulty: {question_data['difficulty']}, Bloom Level: {metadata_data['bloom_level']}\n"
+            f"Skill Tags: {', '.join(metadata_data['skill_tags'])}\n"
         )
 
-        # Call OpenAI GPT to generate explanation
+        # Step 5: Call OpenAI GPT to generate explanation
         gpt_response = openai_client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
@@ -120,7 +124,19 @@ async def explain_question_endpoint(request: ExplainRequest):
 
         explanation = gpt_response.choices[0].message.content.strip()
 
+        # Step 6: Save the explanation back to the questions table
+        update_response = supabase.from_("questions").update({
+            "explanation": explanation
+        }).eq("id", request.question_id).execute()
+
+        if not update_response.data:
+            raise HTTPException(status_code=500, detail="Failed to update question with explanation.")
+
+        # Step 7: Return the explanation in the response
         return {"question_id": request.question_id, "explanation": explanation}
 
     except Exception as e:
+        # We can keep the error logging for debugging
+        import traceback
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e)) 
