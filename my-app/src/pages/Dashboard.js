@@ -85,6 +85,7 @@ const Dashboard = () => {
   const [userData, setUserData] = useState(null);
   const [availableExams, setAvailableExams] = useState([]);
   const [isChangingExam, setIsChangingExam] = useState(false);
+  const [userLevel, setUserLevel] = useState(null);
 
   // Filter tests based on activeFilter
   const filteredTests = tests.filter(test => {
@@ -97,21 +98,21 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
-      if (!user) {
+    if (!user) {
       // Don't navigate immediately, wait for auth to complete
-        return;
-      }
+      return;
+    }
 
     const loadDashboardData = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // Get user profile data
+        // Get user profile data including total_xp
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, name, selected_exam_id, profile_photo_url')
-        .eq('id', user.id)
+          .select('id, name, selected_exam_id, profile_photo_url, total_xp')
+          .eq('id', user.id)
           .maybeSingle();
 
         if (profileError) throw profileError;
@@ -122,6 +123,22 @@ const Dashboard = () => {
           ...profileData,
           email: user.email
         });
+
+        // Set user level based on total_xp
+        const totalXp = profileData.total_xp || 0; // Get total XP from profileData
+
+        // Fetch user level based on total XP
+        const { data: levelData, error: levelError } = await supabase
+          .from('levels')
+          .select('*')
+          .lte('min_xp', totalXp)
+          .order('min_xp', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (levelError) throw levelError;
+
+        setUserLevel(levelData?.level_name || 'Beginner'); // Default to 'Beginner' if no level found
 
         // Get all available exams
         const { data: exams, error: examsError } = await supabase
@@ -411,9 +428,9 @@ const Dashboard = () => {
       {/* New Navigation Bar */}
       <nav style={styles.navbar}>
         <div style={styles.navLeft}>
-        <div style={styles.logo}>
+          <div style={styles.logo}>
             PREP<span style={styles.logoHighlight}>HUB</span>
-        </div>
+          </div>
           <div style={styles.examSelector}>
             <span style={styles.examName}>{selectedExam?.exam_name}</span>
             <button
@@ -425,6 +442,8 @@ const Dashboard = () => {
           </div>
         </div>
         <div style={styles.navRight}>
+          <span style={styles.userLevel}>{userLevel}</span>
+          <span style={styles.totalXp}>XP: {userData?.total_xp || 0}</span>
           <button 
             onClick={() => navigate('/leaderboard')}
             style={styles.leaderboardButton}
@@ -1092,6 +1111,18 @@ const styles = {
     '&:hover': {
       backgroundColor: '#2563eb',
     },
+  },
+  userLevel: {
+    fontSize: '16px',
+    fontWeight: '500',
+    color: '#4b5563',
+    marginRight: '16px',
+  },
+  totalXp: {
+    fontSize: '16px',
+    fontWeight: '500',
+    color: '#4b5563',
+    marginRight: '16px',
   },
 };
 
