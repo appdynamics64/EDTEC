@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 import ProfileModal from '../components/ProfileModal';
-import { FaUserCog, FaCheckCircle, FaChartLine, FaTrophy, FaComments } from 'react-icons/fa';
+import { FaUserCog, FaCheckCircle, FaChartLine, FaTrophy, FaComments, FaGraduationCap } from 'react-icons/fa';
 
 // Add this colors object at the top of the file, after the imports
 const colors = {
@@ -471,6 +471,13 @@ const Dashboard = () => {
         <div style={styles.navRight}>
           <span style={styles.userLevel}>{userLevel}</span>
           <span style={styles.totalXp}>XP: {userData?.total_xp || 0}</span>
+          <button 
+            onClick={() => navigate('/practice')}
+            style={styles.practiceButton}
+          >
+            <FaGraduationCap style={{ marginRight: '8px' }} />
+            Practice
+          </button>
           <button 
             onClick={() => navigate('/leaderboard')}
             style={styles.leaderboardButton}
@@ -1215,6 +1222,23 @@ const styles = {
     fontWeight: '500',
     color: '#4b5563',
     marginRight: '16px',
+  },
+  practiceButton: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '8px 16px',
+    backgroundColor: '#10B981', // Green color
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    marginRight: '16px',
+    transition: 'background-color 0.2s',
+    '&:hover': {
+      backgroundColor: '#059669',
+    },
   },
 };
 

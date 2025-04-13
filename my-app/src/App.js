@@ -27,6 +27,7 @@ import PrivateRoute from './components/PrivateRoute';
 import Chatbot from './pages/Chatbot';
 import ExplainQuestion from './pages/ExplainQuestion';
 import UploadQuestions from './pages/UploadQuestions';
+import Practice from './pages/Practice';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
@@ -167,6 +168,10 @@ function App() {
       {
         path: "/upload-questions",
         element: <PrivateRoute><UploadQuestions /></PrivateRoute>
+      },
+      {
+        path: "/practice",
+        element: <PrivateRoute><Practice /></PrivateRoute>
       },
       {
         path: "*",
