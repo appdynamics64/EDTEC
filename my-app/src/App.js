@@ -17,6 +17,12 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
+import DashboardNew from './pages/DashboardNew'; // New dashboard with sidebar
+import PracticeTests from './pages/PracticeTests'; // New practice tests with sidebar
+import PracticeTopics from './pages/PracticeTopics'; // Practice by Topics with sidebar
+import MyProgress from './pages/MyProgress'; // New progress page with sidebar
+import Help from './pages/Help'; // Help & Support page
+import Profile from './pages/Profile'; // User profile page
 import ExamSelectionOnboarding from './pages/ExamSelectionOnboarding';
 import LoadingScreen from './components/LoadingScreen';
 import TestDetails from './pages/TestDetails';
@@ -28,6 +34,7 @@ import Chatbot from './pages/Chatbot';
 import ExplainQuestion from './pages/ExplainQuestion';
 import UploadQuestions from './pages/UploadQuestions';
 import Practice from './pages/Practice';
+import Test from './pages/Test';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
@@ -79,7 +86,7 @@ function App() {
 
         const hasProfile = Boolean(data?.name && data?.selected_exam_id);
         setIsOnboardingComplete(hasProfile);
-        setInitialRoute(hasProfile ? '/dashboard' : '/onboarding');
+        setInitialRoute(hasProfile ? '/dashboard-new' : '/onboarding');
       } catch (error) {
         console.error('Error checking initial state:', error);
         setInitialRoute('/login');
@@ -107,7 +114,31 @@ function App() {
       },
       {
         path: "/",
+        element: <Navigate to="/dashboard-new" replace />
+      },
+      {
+        path: "/dashboard",
         element: <PrivateRoute><Dashboard /></PrivateRoute>
+      },
+      {
+        path: "/dashboard-new",
+        element: <PrivateRoute><DashboardNew /></PrivateRoute>
+      },
+      {
+        path: "/practice-tests",
+        element: <PrivateRoute><PracticeTests /></PrivateRoute>
+      },
+      {
+        path: "/practice-topics",
+        element: <PrivateRoute><PracticeTopics /></PrivateRoute>
+      },
+      {
+        path: "/my-progress",
+        element: <PrivateRoute><MyProgress /></PrivateRoute>
+      },
+      {
+        path: "/help",
+        element: <PrivateRoute><Help /></PrivateRoute>
       },
       {
         path: "/test/:testId",
@@ -130,19 +161,9 @@ function App() {
         element: !user ? (
           <Navigate to="/login" replace />
         ) : isOnboardingComplete ? (
-          <Navigate to="/dashboard" replace />
+          <Navigate to="/dashboard-new" replace />
         ) : (
           <ExamSelectionOnboarding />
-        )
-      },
-      {
-        path: "/dashboard",
-        element: !user ? (
-          <Navigate to="/login" replace />
-        ) : !isOnboardingComplete ? (
-          <Navigate to="/onboarding" replace />
-        ) : (
-          <Dashboard />
         )
       },
       {
@@ -172,6 +193,18 @@ function App() {
       {
         path: "/practice",
         element: <PrivateRoute><Practice /></PrivateRoute>
+      },
+      {
+        path: "/profile",
+        element: <PrivateRoute><Profile /></PrivateRoute>
+      },
+      {
+        path: "/test/:id",
+        element: <PrivateRoute><Test /></PrivateRoute>
+      },
+      {
+        path: "/test",
+        element: <PrivateRoute><Test /></PrivateRoute>
       },
       {
         path: "*",

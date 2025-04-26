@@ -273,9 +273,7 @@ const TestScreen = () => {
             p_test_attempt_id: testAttemptId
           }).then(async () => {
             // Update this navigation path as well
-            navigate(`/test-solution/${testId}/${testAttemptId}`, {
-              state: { justCompleted: true }
-            });
+            navigate(`/test-solution/${testId}/${testAttemptId}`);
           }).catch(error => {
             console.error('Error finalizing test:', error);
             alert('Failed to submit test. Please try again.');
@@ -390,9 +388,7 @@ const TestScreen = () => {
       console.log('Test finalized successfully:', finalizeData);
 
       // Update the navigation path to match App.js route
-      navigate(`/test-solution/${testId}/${testAttemptId}`, {
-        state: { justCompleted: true }
-      });
+      navigate(`/test-solution/${testId}/${testAttemptId}`);
     } catch (error) {
       console.error('Detailed error in handleFinishTest:', error);
       alert(`Failed to submit test: ${error.message}`);

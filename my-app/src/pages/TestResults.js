@@ -14,7 +14,6 @@ function TestResults() {
   const [testResult, setTestResult] = useState(null);
   const [testDetails, setTestDetails] = useState(null);
   const [userAnswers, setUserAnswers] = useState([]);
-  const [totalXP, setTotalXP] = useState(0);
 
   const fetchResults = useCallback(async () => {
     try {
@@ -83,61 +82,9 @@ function TestResults() {
     }
   }, [resultId]);
 
-  const calculateXP = (score) => {
-    // Simple XP calculation based on score
-    return Math.round(score);
-  };
-
-  const updateXP = useCallback(async (score) => {
-    try {
-      const xpEarned = calculateXP(score);
-
-      // Update xp_transactions table
-      const { error: xpError } = await supabase
-        .from('xp_transactions')
-        .insert({
-          user_id: user.id,
-          source: 'test_completed',
-          test_id: testId,
-          xp_earned: xpEarned,
-        });
-
-      if (xpError) throw xpError;
-
-      // Update profiles table
-      const { data, error: profileError } = await supabase
-        .from('profiles')
-        .select('total_xp')
-        .eq('id', user.id)
-        .single();
-
-      if (profileError) throw profileError;
-
-      const newTotalXP = data.total_xp + xpEarned;
-
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ total_xp: newTotalXP })
-        .eq('id', user.id);
-
-      if (updateError) throw updateError;
-
-      setTotalXP(newTotalXP);
-    } catch (error) {
-      console.error('Error updating XP:', error);
-      setError('Failed to update XP');
-    }
-  }, [testId]);
-
   useEffect(() => {
     fetchTestResults();
   }, [fetchTestResults]);
-
-  useEffect(() => {
-    if (testResult && testResult.score) {
-      updateXP(testResult.score);
-    }
-  }, [testResult, updateXP]);
 
   const handleRetakeTest = async () => {
     try {
@@ -221,9 +168,6 @@ function TestResults() {
               </p>
               <p>
                 <strong>Correct Answers:</strong> {userAnswers.filter(a => a.is_correct).length} / {userAnswers.length}
-              </p>
-              <p>
-                <strong>Total XP:</strong> {totalXP}
               </p>
             </div>
             <div>
