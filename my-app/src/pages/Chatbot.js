@@ -8,6 +8,7 @@ import useAuth from '../hooks/useAuth';
 import LoadingScreen from '../components/LoadingScreen';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../config/supabaseClient';
+import SidebarLayout from '../components/layout/SidebarLayout';
 
 const MAX_MESSAGES = 100; // Limit the number of messages to prevent excessive memory usage
 
@@ -284,57 +285,65 @@ const Chatbot = () => {
     );
   };
 
+  // Add MainContent wrapper for full height layout
+  const MainContent = styled.div`
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  `;
+
   return (
-    <Container>
-      <Header>
-        <BackButton onClick={() => navigate('/dashboard')}>
-          <FaArrowLeft />
-        </BackButton>
-        <Title>AI Study Assistant</Title>
-      </Header>
-      
-      <ChatContainer>
-        {initialLoading ? (
-          <LoadingContainer>
-            <LoadingBubble>
-              <LoadingDot $delay="0s" />
-              <LoadingDot $delay="0.2s" />
-              <LoadingDot $delay="0.4s" />
-            </LoadingBubble>
-            <LoadingText>Loading conversation history...</LoadingText>
-          </LoadingContainer>
-        ) : (
-          <MessageList>
-            {messages.map((message, index) => (
-              <MessageBubbleWrapper key={index} isUser={message.type === 'user'}>
-                {message.text || 'No content available'}
-              </MessageBubbleWrapper>
-            ))}
-            {loading && (
-              <LoadingBubble>
-                <LoadingDot $delay="0s" />
-                <LoadingDot $delay="0.2s" />
-                <LoadingDot $delay="0.4s" />
-              </LoadingBubble>
+    <SidebarLayout>
+      <MainContent>
+        <PageHeader>
+          <HeaderContent>
+            <PageTitle>AI Study Assistant</PageTitle>
+          </HeaderContent>
+        </PageHeader>
+        <Container>
+          <ChatContainer>
+            {initialLoading ? (
+              <LoadingContainer>
+                <LoadingBubble>
+                  <LoadingDot $delay="0s" />
+                  <LoadingDot $delay="0.2s" />
+                  <LoadingDot $delay="0.4s" />
+                </LoadingBubble>
+                <LoadingText>Loading conversation history...</LoadingText>
+              </LoadingContainer>
+            ) : (
+              <MessageList>
+                {messages.map((message, index) => (
+                  <MessageBubbleWrapper key={index} isUser={message.type === 'user'}>
+                    {message.text || 'No content available'}
+                  </MessageBubbleWrapper>
+                ))}
+                {loading && (
+                  <LoadingBubble>
+                    <LoadingDot $delay="0s" />
+                    <LoadingDot $delay="0.2s" />
+                    <LoadingDot $delay="0.4s" />
+                  </LoadingBubble>
+                )}
+                <div ref={messagesEndRef} />
+              </MessageList>
             )}
-            <div ref={messagesEndRef} />
-          </MessageList>
-        )}
-        
-        <InputForm onSubmit={handleSubmit}>
-          <ChatInput
-            type="text"
-            placeholder="Type your question here..."
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            disabled={loading || initialLoading}
-          />
-          <SendButton type="submit" disabled={loading || initialLoading || !inputText.trim()}>
-            <FaPaperPlane />
-          </SendButton>
-        </InputForm>
-      </ChatContainer>
-    </Container>
+            <InputForm onSubmit={handleSubmit}>
+              <ChatInput
+                type="text"
+                placeholder="Type your question here..."
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                disabled={loading || initialLoading}
+              />
+              <SendButton type="submit" disabled={loading || initialLoading || !inputText.trim()}>
+                <FaPaperPlane />
+              </SendButton>
+            </InputForm>
+          </ChatContainer>
+        </Container>
+      </MainContent>
+    </SidebarLayout>
   );
 };
 
@@ -357,142 +366,138 @@ const LoadingText = styled.p`
 const Container = styled.div`
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
+  /* height: 100vh; */
   background-color: ${colors.backgroundSecondary || '#f5f7fa'};
-  overflow: hidden; /* Prevent the container from scrolling */
+  overflow: hidden;
 `;
 
-const Header = styled.header`
-  display: flex;
-  align-items: center;
-  padding: 16px 24px;
-  background-color: ${colors.brandPrimary || '#4f46e5'};
-  color: white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  z-index: 10; /* Ensure header stays on top */
+// Add styled components for consistent header
+const PageHeader = styled.div`
+  background-color: #f8fafc;
+  padding: 32px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 24px;
 `;
 
-const BackButton = styled.button`
-  background: none;
-  border: none;
-  color: white;
-  font-size: 20px;
-  cursor: pointer;
-  padding: 8px;
-  margin-right: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  
-  &:hover {
-    opacity: 0.8;
-  }
+const HeaderContent = styled.div`
+  max-width: 1200px;
+  margin: 0 auto;
 `;
 
-const Title = styled.h1`
-  ${typography.headingMd || 'font-size: 1.5rem; font-weight: 600;'};
-  margin: 0;
+const PageTitle = styled.h1`
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px 0;
 `;
 
 const ChatContainer = styled.div`
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 24px;
+  height: 100%;
+  position: relative;
   max-width: 800px;
   margin: 0 auto;
   width: 100%;
-  height: 100%; /* Ensure it takes full height */
-  position: relative; /* For proper positioning of children */
-  overflow: hidden; /* Prevent container from scrolling */
+  overflow: hidden;
 `;
 
+// Add styled components for consistent input form
+const InputForm = styled.form`
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+`;
+
+const ChatInput = styled.input`
+  flex: 1;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  color: ${colors.textPrimary || '#1f2937'};
+`;
+
+const SendButton = styled.button`
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  background-color: ${colors.brandPrimary || '#4f46e5'};
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-left: 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: ${colors.brandPrimaryHover || '#5b51d8'};
+  }
+
+  &:disabled {
+    background-color: ${colors.textSecondary};
+    cursor: not-allowed;
+  }
+`;
+
+// Add styled components for consistent message list
 const MessageList = styled.div`
   flex: 1;
-  overflow-y: auto; /* Allow message list to scroll */
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding-bottom: 16px;
-  margin-bottom: 80px; /* Make space for the input form */
-`;
-
-const LoadingBubble = styled.div`
-  align-self: flex-start;
-  background-color: white;
-  border-radius: 16px;
+  overflow-y: auto;
   padding: 16px;
-  display: flex;
-  gap: 6px;
+  padding-bottom: 80px;
 `;
 
-const bounce = keyframes`
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+// Add styled components for consistent message bubbles
+const MessageBubbleWrapper = styled.div`
+  max-width: 75%;
+  padding: 12px 16px;
+  border-radius: 16px;
+  align-self: ${props => props.isUser ? 'flex-end' : 'flex-start'};
+  background-color: ${props => props.isUser ? (colors.brandPrimary || '#4f46e5') : 'white'};
+  color: ${props => props.isUser ? 'white' : (colors.textPrimary || '#1f2937')};
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  font-size: 1rem;
+  line-height: 1.5;
+`;
+
+// Add styled components for consistent loading bubbles
+const LoadingBubble = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  border-radius: 16px;
+  background-color: ${colors.backgroundSecondary || '#f5f7fa'};
+  margin-top: 16px;
 `;
 
 const LoadingDot = styled.div`
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: ${colors.brandPrimary || '#4f46e5'};
-  animation: ${bounce} 1s infinite;
+  background-color: ${colors.textPrimary || '#1f2937'};
+  margin: 0 4px;
+  animation: ${keyframes`
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+  `} 1.4s infinite ease-in-out;
   animation-delay: ${props => props.$delay};
 `;
 
-const InputForm = styled.form`
-  display: flex;
-  gap: 12px;
-  padding: 16px 0;
-  border-top: 1px solid ${colors.borderPrimary || '#e5e7eb'};
-  background-color: ${colors.backgroundSecondary || '#f5f7fa'};
-  position: absolute;
-  bottom: 0;
-  left: 24px;
-  right: 24px;
-  width: calc(100% - 48px);
-`;
-
-const ChatInput = styled.input`
-  flex: 1;
-  padding: 14px 20px;
-  border-radius: 24px;
-  border: 1px solid ${colors.borderPrimary || '#e5e7eb'};
-  ${typography.textMdRegular || 'font-size: 1rem;'};
-  outline: none;
-  
-  &:focus {
-    border-color: ${colors.brandPrimary || '#4f46e5'};
-    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
-  }
-  
-  &:disabled {
-    background-color: ${colors.backgroundDisabled || '#f3f4f6'};
-    cursor: not-allowed;
-  }
-`;
-
-const SendButton = styled.button`
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background-color: ${colors.brandPrimary || '#4f46e5'};
-  color: white;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  
-  &:hover:not(:disabled) {
-    background-color: ${colors.brandPrimaryDark || '#3c3599'};
-  }
-  
-  &:disabled {
-    background-color: ${colors.backgroundDisabled || '#d1d5db'};
-    cursor: not-allowed;
-  }
-`;
-
-export default Chatbot; 
+export default Chatbot;

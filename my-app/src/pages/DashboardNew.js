@@ -20,7 +20,8 @@ import {
   FaBolt,
   FaChevronRight,
   FaArrowUp,
-  FaStar
+  FaStar,
+  FaExternalLinkAlt
 } from 'react-icons/fa';
 
 // Reusable components
@@ -52,8 +53,35 @@ const ActionCard = ({ icon: Icon, title, description, action, onClick }) => (
   </StyledActionCard>
 );
 
+const StatusBadge = ({ status }) => {
+  let bgColor, textColor, label;
+  
+  switch (status) {
+    case 'completed':
+      bgColor = '#D1FAE5';
+      textColor = '#10B981';
+      label = 'Completed';
+      break;
+    case 'in_progress':
+      bgColor = '#FEF3C7';
+      textColor = '#F59E0B';
+      label = 'In Progress';
+      break;
+    default:
+      bgColor = '#F3F4F6';
+      textColor = '#6B7280';
+      label = 'Not Started';
+  }
+  
+  return (
+    <Badge bgColor={bgColor} textColor={textColor}>
+      {label}
+    </Badge>
+  );
+};
+
 const TestCard = ({ test, onClick }) => {
-  const status = test.user_test_progress.status;
+  const status = test.user_test_progress?.status || 'not_started';
   
   return (
     <StyledTestCard 
@@ -61,51 +89,62 @@ const TestCard = ({ test, onClick }) => {
       onClick={() => onClick(test.id)}
     >
       <TestCardHeader>
-        <TestCardTitle>{test.test_name}</TestCardTitle>
-        <TestStatusBadge status={status}>
-          {status === 'completed' 
-            ? 'Completed' 
-            : status === 'in_progress' 
-              ? 'In Progress' 
-              : 'Not Started'}
-        </TestStatusBadge>
+        <TestTypeTag>{test.test_type || 'Practice'}</TestTypeTag>
+        <StatusBadge status={status} />
       </TestCardHeader>
+      
+      <TestCardTitle>{test.name}</TestCardTitle>
       
       <TestCardInfo>
         <TestCardInfoItem>
-          <span>Questions:</span>
-          <span>{test.number_of_questions}</span>
+          <InfoLabel>Questions</InfoLabel>
+          <InfoValue>{test.number_of_questions || test.questions}</InfoValue>
         </TestCardInfoItem>
+        
         <TestCardInfoItem>
-          <span>Duration:</span>
-          <span>{test.test_duration} mins</span>
+          <InfoLabel>Duration</InfoLabel>
+          <InfoValue>{test.test_duration || test.estimatedTime} mins</InfoValue>
         </TestCardInfoItem>
         
         {status === 'completed' && (
           <TestCardInfoItem>
-            <span>Score:</span>
-            <span>
-              {test.user_test_progress.attempt?.final_score !== 'N/A'
+            <InfoLabel>Score</InfoLabel>
+            <InfoValue className="score">
+              {test.user_test_progress?.attempt?.final_score !== 'N/A'
                 ? `${Math.abs(Number(test.user_test_progress.attempt.final_score)).toFixed(2)}%`
                 : 'N/A'}
-            </span>
+            </InfoValue>
           </TestCardInfoItem>
         )}
         
         {status === 'in_progress' && (
-          <TestProgressBar>
-            <TestProgressFill width="35%" />
-          </TestProgressBar>
+          <TestProgressContainer>
+            <ProgressLabel>Progress</ProgressLabel>
+            <ProgressBar>
+              <ProgressFill width="35%" />
+            </ProgressBar>
+          </TestProgressContainer>
         )}
       </TestCardInfo>
       
-      <TestCardActionButton status={status}>
-        {status === 'completed' 
-          ? 'View Details' 
-          : status === 'in_progress'
-            ? 'Continue Test'
-            : 'Start Test'}
-      </TestCardActionButton>
+      {test.tags && test.tags.length > 0 && (
+        <TagContainer>
+          {test.tags.map((tag, index) => (
+            <Tag key={index}>{tag}</Tag>
+          ))}
+        </TagContainer>
+      )}
+      
+      <TestCardFooter>
+        <TestButton status={status}>
+          {status === 'completed' 
+            ? 'View Details' 
+            : status === 'in_progress'
+              ? 'Continue Test'
+              : 'Start Test'}
+          <FaExternalLinkAlt size={12} style={{ marginLeft: '8px' }} />
+        </TestButton>
+      </TestCardFooter>
     </StyledTestCard>
   );
 };
@@ -396,7 +435,13 @@ const DashboardNew = () => {
               difficulty: testDifficulty,
               estimatedTime: `${testDuration || 30} min`,
               questions: numberOfQuestions || 20,
-              tags: testTags
+              tags: testTags,
+              user_test_progress: userAttempt ? userAttempt.user_test_progress : {
+                status: 'not_started',
+                attempt: {
+                  final_score: 'N/A'
+                }
+              }
             };
           }
           return null;
@@ -416,7 +461,8 @@ const DashboardNew = () => {
               difficulty: test.difficulty || 'Medium',
               estimatedTime: `${test.test_duration || 30} min`,
               questions: test.number_of_questions || 20,
-              tags: test.tags ? JSON.parse(test.tags) : []
+              tags: test.tags ? JSON.parse(test.tags) : [],
+              user_test_progress: test.user_test_progress
             }));
           
           recommendedProcessed.push(...additionalTests);
@@ -561,25 +607,17 @@ const DashboardNew = () => {
             </WelcomeContent>
           </WelcomeSection>
           
-          <DebugSection>
-            <h2>Debug Information</h2>
-            <p>No tests were found for your dashboard. Here's some information that might help:</p>
-            <ul>
-              <li>User ID: {user?.id || 'Not available'}</li>
-              <li>Selected Exam ID: {userData?.selected_exam_id || 'None'}</li>
-              <li>Tests array length: {tests?.length || 0}</li>
-              <li>Recommended tests length: {recommendedTests?.length || 0}</li>
-            </ul>
+          <EmptyState>
+            <h2>No tests available</h2>
+            <p>There are no tests found for your dashboard. Please check back later.</p>
             <button onClick={() => window.location.reload()}>Reload Page</button>
-          </DebugSection>
+          </EmptyState>
           
           <DashboardGrid>
             <RecommendedSection>
               <SectionHeader>
-                <SectionIcon background="#f59e0b">
-                  <FaGraduationCap />
-                </SectionIcon>
                 <SectionTitle>Recommended Tests</SectionTitle>
+                <SectionSubtitle>Personalized test recommendations based on your progress</SectionSubtitle>
               </SectionHeader>
               
               {recommendedTests.length === 0 ? (
@@ -590,22 +628,26 @@ const DashboardNew = () => {
               ) : (
                 <RecommendedGrid>
                   {recommendedTests.map(test => (
-                    <RecommendedCard key={test.id}>
-                      <RecommendedHeader>
-                        <RecommendedName>{test.name}</RecommendedName>
-                      </RecommendedHeader>
+                    <StyledTestCard key={test.id} onClick={() => handleTestClick(test.id)}>
+                      <TestCardHeader>
+                        <TestTypeTag>Practice</TestTypeTag>
+                        <StatusBadge status="not_started" />
+                      </TestCardHeader>
                       
-                      <RecommendedMeta>
-                        <MetaGroup>
-                          <MetaLabel>Time:</MetaLabel>
-                          <MetaValue>{test.estimatedTime}</MetaValue>
-                        </MetaGroup>
-                        <MetaGroup>
-                          <MetaLabel>Questions:</MetaLabel>
-                          <MetaValue>{test.questions}</MetaValue>
-                        </MetaGroup>
-                      </RecommendedMeta>
-
+                      <TestCardTitle>{test.name}</TestCardTitle>
+                      
+                      <TestCardInfo>
+                        <TestCardInfoItem>
+                          <InfoLabel>Questions</InfoLabel>
+                          <InfoValue>{test.questions}</InfoValue>
+                        </TestCardInfoItem>
+                        
+                        <TestCardInfoItem>
+                          <InfoLabel>Duration</InfoLabel>
+                          <InfoValue>{test.estimatedTime}</InfoValue>
+                        </TestCardInfoItem>
+                      </TestCardInfo>
+                      
                       {test.tags && test.tags.length > 0 && (
                         <TagContainer>
                           {test.tags.map((tag, index) => (
@@ -614,11 +656,13 @@ const DashboardNew = () => {
                         </TagContainer>
                       )}
                       
-                      <StartTestButton onClick={() => handleTestClick(test.id)}>
-                        Start Test
-                        <FaChevronRight size={12} />
-                      </StartTestButton>
-                    </RecommendedCard>
+                      <TestCardFooter>
+                        <TestButton status="not_started">
+                          Start Test
+                          <FaExternalLinkAlt size={12} style={{ marginLeft: '8px' }} />
+                        </TestButton>
+                      </TestCardFooter>
+                    </StyledTestCard>
                   ))}
                 </RecommendedGrid>
               )}
@@ -656,10 +700,8 @@ const DashboardNew = () => {
         <DashboardGrid>
           <StatsSection>
             <SectionHeader>
-              <SectionIcon background="#4f46e5">
-                <FaChartLine />
-              </SectionIcon>
               <SectionTitle>Your Stats</SectionTitle>
+              <SectionSubtitle>Track your learning progress and achievements</SectionSubtitle>
             </SectionHeader>
 
             <StatsGrid>
@@ -702,10 +744,8 @@ const DashboardNew = () => {
 
           <RecommendedSection>
             <SectionHeader>
-              <SectionIcon background="#f59e0b">
-                <FaGraduationCap />
-              </SectionIcon>
               <SectionTitle>Recommended for You</SectionTitle>
+              <SectionSubtitle>Personalized test recommendations based on your progress</SectionSubtitle>
             </SectionHeader>
 
             {recommendedTests.length === 0 ? (
@@ -715,36 +755,12 @@ const DashboardNew = () => {
               </EmptyState>
             ) : (
               <RecommendedGrid>
-                {recommendedTests.map(test => (
-                  <RecommendedCard key={test.id}>
-                    <RecommendedHeader>
-                      <RecommendedName>{test.name}</RecommendedName>
-                    </RecommendedHeader>
-                    
-                    <RecommendedMeta>
-                      <MetaGroup>
-                        <MetaLabel>Time:</MetaLabel>
-                        <MetaValue>{test.estimatedTime}</MetaValue>
-                      </MetaGroup>
-                      <MetaGroup>
-                        <MetaLabel>Questions:</MetaLabel>
-                        <MetaValue>{test.questions}</MetaValue>
-                      </MetaGroup>
-                    </RecommendedMeta>
-
-                    {test.tags && test.tags.length > 0 && (
-                      <TagContainer>
-                        {test.tags.map((tag, index) => (
-                          <Tag key={index}>{tag}</Tag>
-                        ))}
-                      </TagContainer>
-                    )}
-                    
-                    <StartTestButton onClick={() => handleTestClick(test.id)}>
-                      Start Test
-                      <FaChevronRight size={12} />
-                    </StartTestButton>
-                  </RecommendedCard>
+                {recommendedTests.slice(0, 3).map(test => (
+                  <TestCard 
+                    key={test.id} 
+                    test={test} 
+                    onClick={handleTestClick}
+                  />
                 ))}
               </RecommendedGrid>
             )}
@@ -797,13 +813,12 @@ const LoadingText = styled.p`
 
 const WelcomeSection = styled.div`
   position: relative;
-  height: 180px;
   overflow: hidden;
   border-radius: 0 0 20px 20px;
   margin-bottom: 32px;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
   
   @media (max-width: 768px) {
-    height: 220px;
   }
 `;
 
@@ -822,17 +837,18 @@ const WelcomeContent = styled.div`
   z-index: 1;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 32px;
+  padding: 16px 32px 16px 32px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 100%;
+  min-height: 80px;
   color: white;
   
   @media (max-width: 768px) {
     flex-direction: column;
     align-items: flex-start;
-    gap: 24px;
+    gap: 12px;
+    padding: 16px;
   }
 `;
 
@@ -845,7 +861,7 @@ const WelcomeMessage = styled.div`
   }
   
   p {
-    font-size: 1.1rem;
+    font-size: 0.875rem;
     margin: 0;
     opacity: 0.9;
   }
@@ -856,7 +872,7 @@ const WelcomeMessage = styled.div`
     }
     
     p {
-      font-size: 1rem;
+      font-size: 0.875rem;
     }
   }
 `;
@@ -917,22 +933,9 @@ const DashboardGrid = styled.div`
 
 const SectionHeader = styled.div`
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 4px;
   margin-bottom: 24px;
-`;
-
-const SectionIcon = styled.div`
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: ${props => props.background || '#4f46e5'};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 1.2rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 `;
 
 const SectionTitle = styled.h2`
@@ -940,6 +943,12 @@ const SectionTitle = styled.h2`
   font-weight: 700;
   color: #1e293b;
   margin: 0;
+`;
+
+const SectionSubtitle = styled.div`
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-top: 4px;
 `;
 
 const StatsSection = styled.section`
@@ -1062,87 +1071,105 @@ const RecommendedSection = styled.section`
   border-radius: 20px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   padding: 24px;
+  margin-bottom: 28px;
 `;
 
 const RecommendedGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
   margin-bottom: 24px;
   
-  @media (max-width: 640px) {
+  @media (max-width: 1024px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  @media (max-width: 768px) {
     grid-template-columns: 1fr;
   }
 `;
 
-const RecommendedCard = styled.div`
+const StyledTestCard = styled.div`
+  position: relative;
+  background-color: white;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
-  padding: 20px;
-  background-color: #f8fafc;
-  border-radius: 12px;
-  transition: all 0.2s ease;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border-top: 4px solid ${props => 
+    props.status === 'completed' ? '#10B981' :
+    props.status === 'in_progress' ? '#F59E0B' : '#3B82F6'
+  };
   
   &:hover {
     transform: translateY(-4px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
 `;
 
-const RecommendedHeader = styled.div`
+const TestCardHeader = styled.div`
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 16px;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #f3f4f6;
 `;
 
-const RecommendedName = styled.div`
+const TestTypeTag = styled.span`
+  padding: 4px 8px;
+  background-color: #eff6ff;
+  color: #3b82f6;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+`;
+
+const Badge = styled.span`
+  padding: 4px 8px;
+  background-color: ${props => props.bgColor || '#f3f4f6'};
+  color: ${props => props.textColor || '#6b7280'};
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+`;
+
+const TestCardTitle = styled.h3`
+  margin: 0;
+  padding: 0 16px;
+  font-size: 1.125rem;
   font-weight: 600;
   color: #1e293b;
-  font-size: 1rem;
-`;
-
-const DifficultyBadge = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 8px;
-  background-color: ${props => props.color || '#4f46e5'};
-  color: white;
-  border-radius: 20px;
-  font-weight: 500;
-  font-size: 0.75rem;
-  white-space: nowrap;
-`;
-
-const RecommendedMeta = styled.div`
-  display: flex;
-  justify-content: space-between;
+  line-height: 1.4;
   margin-bottom: 16px;
 `;
 
-const MetaGroup = styled.div`
+const TestCardInfo = styled.div`
+  padding: 0 16px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
+  flex: 1;
 `;
 
-const MetaLabel = styled.div`
-  font-size: 0.75rem;
-  color: #64748b;
-`;
-
-const MetaValue = styled.div`
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #1e293b;
+const TestCardInfoItem = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  
+  .score {
+    font-weight: 600;
+    color: #10b981;
+  }
 `;
 
 const TagContainer = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 0 16px;
   margin-bottom: 16px;
 `;
 
@@ -1155,27 +1182,65 @@ const Tag = styled.div`
   font-weight: 500;
 `;
 
-const StartTestButton = styled.button`
+const TestCardFooter = styled.div`
+  padding: 16px;
+  border-top: 1px solid #f3f4f6;
+  margin-top: 16px;
+`;
+
+const TestButton = styled.button`
+  width: 100%;
+  padding: 10px 16px;
+  background-color: ${props => 
+    props.status === 'completed' ? '#4b5563' :
+    props.status === 'in_progress' ? '#f59e0b' : '#3b82f6'
+  };
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px;
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin-top: auto;
+  transition: background-color 0.2s ease;
   
   &:hover {
-    box-shadow: 0 4px 8px rgba(79, 70, 229, 0.3);
+    background-color: ${props => 
+      props.status === 'completed' ? '#374151' :
+      props.status === 'in_progress' ? '#d97706' : '#2563eb'
+    };
   }
 `;
 
-// Styled components for StatCard
+const TestProgressContainer = styled.div`
+  margin-top: 4px;
+`;
+
+const ProgressLabel = styled.div`
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 4px;
+`;
+
+const ProgressBar = styled.div`
+  width: 100%;
+  height: 6px;
+  background-color: #f3f4f6;
+  border-radius: 3px;
+  overflow: hidden;
+`;
+
+const ProgressFill = styled.div`
+  height: 100%;
+  width: ${props => props.width || '0%'};
+  background-color: #f59e0b;
+  border-radius: 3px;
+`;
+
+// Add back the missing styled components
 const StyledStatCard = styled.div`
   display: flex;
   align-items: center;
@@ -1226,7 +1291,6 @@ const StatCardSubtext = styled.div`
   margin-top: 2px;
 `;
 
-// Styled components for ActionCard
 const StyledActionCard = styled.div`
   background-color: white;
   border-radius: 12px;
@@ -1273,162 +1337,14 @@ const ActionCardDescription = styled.p`
   line-height: 1.5;
 `;
 
-// Styled components for TestCard
-const StyledTestCard = styled.div`
-  background-color: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-top: 4px solid ${props => 
-    props.status === 'completed' ? '#10b981' : 
-    props.status === 'in_progress' ? '#f59e0b' : 
-    '#4f46e5'
-  };
-  
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
+const InfoLabel = styled.span`
+  font-size: 0.875rem;
+  color: #6b7280;
 `;
 
-const TestCardHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-`;
-
-const TestCardTitle = styled.h3`
-  font-size: 1.1rem;
-  font-weight: 600;
+const InfoValue = styled.span`
+  font-size: 0.875rem;
   color: #1e293b;
-  margin: 0;
-  flex: 1;
 `;
 
-const TestStatusBadge = styled.div`
-  display: inline-flex;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  
-  background-color: ${props => 
-    props.status === 'completed' ? 'rgba(16, 185, 129, 0.1)' : 
-    props.status === 'in_progress' ? 'rgba(245, 158, 11, 0.1)' : 
-    'rgba(79, 70, 229, 0.1)'
-  };
-  
-  color: ${props => 
-    props.status === 'completed' ? '#10b981' : 
-    props.status === 'in_progress' ? '#f59e0b' : 
-    '#4f46e5'
-  };
-`;
-
-const TestCardInfo = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 20px;
-`;
-
-const TestCardInfoItem = styled.div`
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.875rem;
-  
-  span:first-child {
-    color: #64748b;
-  }
-  
-  span:last-child {
-    color: #1e293b;
-    font-weight: 500;
-  }
-`;
-
-const TestProgressBar = styled.div`
-  height: 6px;
-  background-color: #e2e8f0;
-  border-radius: 3px;
-  margin-top: 8px;
-  overflow: hidden;
-`;
-
-const TestProgressFill = styled.div`
-  height: 100%;
-  background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
-  width: ${props => props.width || '0%'};
-`;
-
-const TestCardActionButton = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: auto;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  
-  background-color: ${props => 
-    props.status === 'completed' ? 'rgba(16, 185, 129, 0.1)' : 
-    props.status === 'in_progress' ? 'rgba(245, 158, 11, 0.1)' : 
-    'rgba(79, 70, 229, 0.1)'
-  };
-  
-  color: ${props => 
-    props.status === 'completed' ? '#10b981' : 
-    props.status === 'in_progress' ? '#f59e0b' : 
-    '#4f46e5'
-  };
-  
-  &:hover {
-    opacity: 0.8;
-  }
-`;
-
-const DebugSection = styled.div`
-  background-color: #fff3cd;
-  border: 1px solid #ffeeba;
-  border-radius: 12px;
-  padding: 24px;
-  margin: 24px 0;
-  
-  h2 {
-    color: #856404;
-    margin-top: 0;
-  }
-  
-  p {
-    color: #856404;
-  }
-  
-  ul {
-    margin-bottom: 20px;
-  }
-  
-  li {
-    margin-bottom: 8px;
-  }
-  
-  button {
-    background-color: #6c757d;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    
-    &:hover {
-      background-color: #5a6268;
-    }
-  }
-`;
-
-export default DashboardNew; 
+export default DashboardNew;
