@@ -344,7 +344,7 @@ const Chatbot = () => {
       const authToken = session.access_token; // Get the auth token
 
       // Call backend API with auth token
-      const response = await fetch('http://localhost:5000/api/chat', {
+      const response = await fetch('http://localhost:5001/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -396,7 +396,7 @@ const Chatbot = () => {
 
       const authToken = session.access_token; // Get the auth token
 
-      await fetch('http://localhost:5000/api/chat-messages', {
+      await fetch('http://localhost:5001/api/chat-messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

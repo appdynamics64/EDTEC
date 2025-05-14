@@ -21,7 +21,8 @@ import {
   FaChevronRight,
   FaArrowUp,
   FaStar,
-  FaExternalLinkAlt
+  FaExternalLinkAlt,
+  FaUserCog
 } from 'react-icons/fa';
 
 // Reusable components
@@ -771,6 +772,12 @@ const DashboardNew = () => {
             </ActionButton>
           </RecommendedSection>
         </DashboardGrid>
+        <Footer>
+          <AdminConsoleButton onClick={() => navigate('/admin')}>
+            <FaUserCog style={{ marginRight: '8px' }} />
+            Admin Console
+          </AdminConsoleButton>
+        </Footer>
       </PageContainer>
     </SidebarLayout>
   );
@@ -780,6 +787,9 @@ const DashboardNew = () => {
 const PageContainer = styled.div`
   max-width: 1200px;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 `;
 
 const LoadingContainer = styled.div`
@@ -1345,6 +1355,30 @@ const InfoLabel = styled.span`
 const InfoValue = styled.span`
   font-size: 0.875rem;
   color: #1e293b;
+`;
+
+const Footer = styled.footer`
+  border-top: 1px solid #e5e7eb;
+  padding: 16px 32px;
+  margin-top: auto;
+  background-color: #ffffff;
+`;
+
+const AdminConsoleButton = styled.button`
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: transparent;
+  color: #4b5563;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: #f3f4f6;
+  }
 `;
 
 export default DashboardNew;
