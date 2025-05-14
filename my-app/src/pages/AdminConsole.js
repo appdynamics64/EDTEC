@@ -136,7 +136,7 @@ const AdminConsole = () => {
           <FaUpload /> Upload Questions
         </NavItem>
         
-        <BackButton onClick={() => navigate('/dashboard')}>
+        <BackButton onClick={() => navigate('/dashboard-new')}>
           <FaArrowLeft /> Back to Dashboard
         </BackButton>
       </Sidebar>

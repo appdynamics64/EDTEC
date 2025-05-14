@@ -13,7 +13,8 @@ import {
   FaTimes,
   FaChevronLeft,
   FaChevronRight,
-  FaClipboardCheck
+  FaClipboardCheck,
+  FaFileAlt
 } from 'react-icons/fa';
 import { supabase } from '../../config/supabaseClient';
 import useAuth from '../../hooks/useAuth';
@@ -59,6 +60,7 @@ const SidebarLayout = ({ children }) => {
     { path: '/practice-topics', label: 'Practice Topics', icon: FaClipboardCheck },
     { path: '/my-progress', label: 'My Progress', icon: FaChartBar },
     { path: '/chatbot', label: 'Ask EDTEC Bot', icon: FaRobot },
+    { path: '/document-extractor', label: 'Document Extractor', icon: FaFileAlt },
     { path: '/help', label: 'Help & Support', icon: FaQuestionCircle },
   ];
 

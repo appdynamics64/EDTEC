@@ -35,6 +35,7 @@ import ExplainQuestion from './pages/ExplainQuestion';
 import UploadQuestions from './pages/UploadQuestions';
 import Practice from './pages/Practice';
 import Test from './pages/Test';
+import DocumentExtractor from './pages/DocumentExtractor';
 
 function App() {
   const { user, isLoading: authLoading } = useAuth();
@@ -205,6 +206,10 @@ function App() {
       {
         path: "/test",
         element: <PrivateRoute><Test /></PrivateRoute>
+      },
+      {
+        path: "/document-extractor",
+        element: <PrivateRoute><DocumentExtractor /></PrivateRoute>
       },
       {
         path: "*",

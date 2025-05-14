@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.upload import router as upload_router
 from app.api.chatbot import router as chatbot_router
+from app.api.extract import router as extract_router
 
 app = FastAPI()
 
@@ -14,9 +15,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the upload and chatbot routers
+# Include the routers
 app.include_router(upload_router, prefix="/api")
 app.include_router(chatbot_router, prefix="/api")
+app.include_router(extract_router, prefix="/api")
 
 @app.get("/")
 async def root():

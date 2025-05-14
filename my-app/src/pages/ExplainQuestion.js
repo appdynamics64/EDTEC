@@ -5,6 +5,7 @@ import styled from 'styled-components';
 import colors from '../styles/foundation/colors';
 import typography from '../styles/foundation/typography';
 import LoadingScreen from '../components/LoadingScreen';
+import { supabase } from '../config/supabaseClient';
 
 const ExplainQuestion = () => {
   const navigate = useNavigate();
@@ -12,44 +13,107 @@ const ExplainQuestion = () => {
   const [explanation, setExplanation] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [recentQuestions, setRecentQuestions] = useState([]);
-  const [fetchingQuestions, setFetchingQuestions] = useState(false);
+  const [selectionMode, setSelectionMode] = useState('id'); // 'id' or 'browse'
+  const [questions, setQuestions] = useState([]);
+  const [filteredQuestions, setFilteredQuestions] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [loadingBrowse, setLoadingBrowse] = useState(false);
+  const [selectedQuestion, setSelectedQuestion] = useState(null);
 
-  // Fetch some recent questions if available
+  // Fetch questions if browse mode is selected
   useEffect(() => {
-    const fetchRecentQuestions = async () => {
-      try {
-        setFetchingQuestions(true);
-        
-        // Try to fetch a few recent questions for the examples
-        // Adjust this endpoint to match what's available in your API
-        const response = await fetch('/api/chatbot/recent-questions?limit=5');
-        
-        if (response.ok) {
-          const data = await response.json();
-          setRecentQuestions(data);
-        } else {
-          console.log('Could not fetch recent questions - this is optional functionality');
-          // Not setting an error - this is an enhancement, not critical functionality
-        }
-      } catch (error) {
-        console.log('Error fetching recent questions:', error);
-      } finally {
-        setFetchingQuestions(false);
-      }
-    };
+    if (selectionMode === 'browse' && questions.length === 0) {
+      fetchQuestions();
+    }
+  }, [selectionMode]);
 
-    fetchRecentQuestions();
-  }, []);
+  // Filter questions based on search term and subject
+  useEffect(() => {
+    if (questions.length > 0) {
+      let filtered = [...questions];
+      
+      // Filter by subject
+      if (selectedSubject) {
+        filtered = filtered.filter(q => q.subject_name === selectedSubject);
+      }
+      
+      // Filter by search term
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase().trim();
+        filtered = filtered.filter(q => 
+          q.question_text.toLowerCase().includes(term) || 
+          q.id.toString().includes(term)
+        );
+      }
+      
+      setFilteredQuestions(filtered);
+    }
+  }, [questions, searchTerm, selectedSubject]);
+
+  const fetchQuestions = async () => {
+    try {
+      setLoadingBrowse(true);
+      
+      // Fetch questions with their subject and topic info
+      const { data, error } = await supabase
+        .from('questions')
+        .select(`
+          id,
+          question_text,
+          subject:subjects(subject_name),
+          topic:topics(topic_name)
+        `)
+        .limit(100);
+      
+      if (error) throw error;
+      
+      // Format questions for display
+      const formattedQuestions = data.map(q => ({
+        id: q.id,
+        question_text: q.question_text,
+        subject_name: q.subject?.subject_name || 'Unknown',
+        topic_name: q.topic?.topic_name || 'Unknown'
+      }));
+      
+      setQuestions(formattedQuestions);
+      setFilteredQuestions(formattedQuestions);
+      
+      // Extract unique subjects for the filter
+      const uniqueSubjects = [...new Set(formattedQuestions.map(q => q.subject_name))];
+      setSubjects(uniqueSubjects);
+      
+    } catch (error) {
+      console.error('Error fetching questions:', error);
+      setError('Failed to load questions. Please try again later.');
+    } finally {
+      setLoadingBrowse(false);
+    }
+  };
 
   const handleQuestionIdChange = (e) => {
     setQuestionId(e.target.value);
     setError(null);
   };
 
+  const handleSearchTermChange = (e) => {
+    setSearchTerm(e.target.value);
+  };
+
+  const handleSubjectChange = (e) => {
+    setSelectedSubject(e.target.value);
+  };
+
+  const handleQuestionSelect = (question) => {
+    setSelectedQuestion(question);
+    setQuestionId(question.id.toString());
+    setError(null);
+  };
+
   const handleGenerateExplanation = async () => {
     if (!questionId) {
-      setError("Please enter a question ID");
+      setError("Please enter or select a question ID");
       return;
     }
 
@@ -78,11 +142,6 @@ const ExplainQuestion = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleExampleClick = (id) => {
-    setQuestionId(id);
-    setError(null);
   };
 
   return (
@@ -136,8 +195,8 @@ const ExplainQuestion = () => {
           <FaUpload /> Upload Questions
         </NavItem>
         
-        <BackButton onClick={() => navigate('/dashboard')}>
-          <FaArrowLeft /> Back to Dashboard
+        <BackButton onClick={() => navigate('/admin')}>
+          <FaArrowLeft /> Back to Admin
         </BackButton>
       </Sidebar>
       
@@ -151,89 +210,123 @@ const ExplainQuestion = () => {
             <ExplanationCard>
               <h2>Generate AI Explanation</h2>
               <Description>
-                This tool uses AI to create clear, detailed explanations for questions in your database.
+                This tool uses AI to generate detailed explanations for questions. 
+                Either enter a question ID directly or browse to select a question.
               </Description>
               
-              <InputContainer>
-                <Label htmlFor="question-id">Question ID</Label>
-                <Input 
-                  id="question-id"
-                  type="number"
-                  placeholder="Enter question ID"
-                  value={questionId}
-                  onChange={handleQuestionIdChange}
-                />
-              </InputContainer>
+              <SelectionModes>
+                <SelectionModeButton 
+                  active={selectionMode === 'id'} 
+                  onClick={() => setSelectionMode('id')}
+                >
+                  Enter Question ID
+                </SelectionModeButton>
+                <SelectionModeButton 
+                  active={selectionMode === 'browse'} 
+                  onClick={() => setSelectionMode('browse')}
+                >
+                  Browse Questions
+                </SelectionModeButton>
+              </SelectionModes>
               
-              <GenerateButton 
-                id="generate-button"
-                onClick={handleGenerateExplanation} 
-                disabled={loading || !questionId}
-              >
+              {selectionMode === 'id' ? (
+                <InputContainer>
+                  <Label htmlFor="question-id">Question ID</Label>
+                  <Input
+                    id="question-id"
+                    type="number"
+                    value={questionId}
+                    onChange={handleQuestionIdChange}
+                    placeholder="Enter question ID"
+                  />
+                </InputContainer>
+              ) : (
+                <BrowseContainer>
+                  <SearchContainer>
+                    <SearchInput
+                      type="text"
+                      value={searchTerm}
+                      onChange={handleSearchTermChange}
+                      placeholder="Search questions..."
+                    />
+                    <FaSearch style={{ color: '#9ca3af', position: 'absolute', right: '12px', top: '12px' }} />
+                  </SearchContainer>
+                  
+                  <FilterContainer>
+                    <Label>Filter by Subject:</Label>
+                    <Select value={selectedSubject} onChange={handleSubjectChange}>
+                      <option value="">All Subjects</option>
+                      {subjects.map(subject => (
+                        <option key={subject} value={subject}>{subject}</option>
+                      ))}
+                    </Select>
+                  </FilterContainer>
+                  
+                  <QuestionsListContainer>
+                    {loadingBrowse ? (
+                      <LoadingMessage>Loading questions...</LoadingMessage>
+                    ) : filteredQuestions.length === 0 ? (
+                      <EmptyState>No questions found matching your criteria</EmptyState>
+                    ) : (
+                      filteredQuestions.map(question => (
+                        <QuestionItem 
+                          key={question.id}
+                          selected={selectedQuestion?.id === question.id}
+                          onClick={() => handleQuestionSelect(question)}
+                        >
+                          <QuestionId>#{question.id}</QuestionId>
+                          <QuestionDetails>
+                            <QuestionText>{question.question_text}</QuestionText>
+                            <QuestionMeta>
+                              Subject: {question.subject_name} | Topic: {question.topic_name}
+                            </QuestionMeta>
+                          </QuestionDetails>
+                        </QuestionItem>
+                      ))
+                    )}
+                  </QuestionsListContainer>
+                </BrowseContainer>
+              )}
+              
+              {error && <ErrorContainer>{error}</ErrorContainer>}
+              
+              <GenerateButton onClick={handleGenerateExplanation} disabled={loading || !questionId}>
                 {loading ? 'Generating...' : 'Generate Explanation'}
               </GenerateButton>
               
-              {loading && <LoadingMessage>Generating explanation using AI... This may take a few seconds.</LoadingMessage>}
-              
-              {error && (
-                <ErrorContainer>
-                  {error}
-                </ErrorContainer>
-              )}
-              
               {explanation && (
                 <ResultContainer>
-                  <h3>Generated Explanation</h3>
+                  <h3>Explanation:</h3>
                   <ExplanationText>{explanation}</ExplanationText>
                 </ResultContainer>
               )}
             </ExplanationCard>
             
             <InfoCard>
-              <h3>About This Tool</h3>
+              <h3>How This Tool Works</h3>
               <p>
-                The AI Explanation Tool helps you generate high-quality explanations for your test questions.
+                This tool uses an advanced AI model to analyze questions and generate 
+                clear, detailed explanations tailored for students.
               </p>
               
               <InfoBox>
-                <h4>How It Works</h4>
-                <ol>
-                  <li>Enter the ID of the question you need explained</li>
-                  <li>Click "Generate Explanation"</li>
-                  <li>The AI will analyze the question and create a detailed explanation</li>
-                  <li>Review and use the explanation in your tests</li>
-                </ol>
-              </InfoBox>
-              
-              <InfoBox warning>
-                <h4>Notes</h4>
+                <h4>Benefits</h4>
                 <ul>
-                  <li>This tool works best with clearly formulated questions</li>
-                  <li>For complex questions, you may need to edit the generated explanation</li>
-                  <li>The explanation is automatically saved to the question in the database</li>
+                  <li>Saves time creating explanations manually</li>
+                  <li>Consistent explanation quality</li>
+                  <li>Detailed step-by-step breakdowns</li>
+                  <li>Explanations stored in the database for future use</li>
                 </ul>
               </InfoBox>
               
-              {recentQuestions.length > 0 && (
-                <ExamplesBox>
-                  <h4>Recent Questions</h4>
-                  <p>Click on a question ID to generate an explanation:</p>
-                  <ExamplesList>
-                    {recentQuestions.map(q => (
-                      <ExampleItem 
-                        key={q.id} 
-                        onClick={() => handleExampleClick(q.id)}
-                        selected={questionId === q.id.toString()}
-                      >
-                        <ExampleId>{q.id}</ExampleId>
-                        <ExampleText>{q.question_text}</ExampleText>
-                      </ExampleItem>
-                    ))}
-                  </ExamplesList>
-                </ExamplesBox>
-              )}
-              
-              {fetchingQuestions && <p>Loading recent questions...</p>}
+              <InfoBox warning>
+                <h4>Important Notes</h4>
+                <ul>
+                  <li>Explanations are generated using AI and should be reviewed</li>
+                  <li>Generation may take 10-15 seconds per question</li>
+                  <li>Once generated, explanations are saved for reuse</li>
+                </ul>
+              </InfoBox>
             </InfoCard>
           </CardContainer>
         </ContentArea>
@@ -242,7 +335,6 @@ const ExplainQuestion = () => {
   );
 };
 
-// Styled components
 const Container = styled.div`
   display: flex;
   height: 100vh;
@@ -362,6 +454,23 @@ const InfoCard = styled.div`
   }
 `;
 
+const SelectionModes = styled.div`
+  display: flex;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 20px;
+`;
+
+const SelectionModeButton = styled.button`
+  background: none;
+  border: none;
+  padding: 12px 20px;
+  cursor: pointer;
+  color: ${props => props.active ? colors.brandPrimary : '#6b7280'};
+  border-bottom: ${props => props.active ? `2px solid ${colors.brandPrimary}` : 'none'};
+  font-weight: ${props => props.active ? 'bold' : 'normal'};
+  margin-bottom: -1px;
+`;
+
 const Description = styled.p`
   color: #4b5563;
   margin-bottom: 24px;
@@ -380,53 +489,133 @@ const Label = styled.label`
 
 const Input = styled.input`
   width: 100%;
-  padding: 10px;
+  padding: 10px 12px;
   border: 1px solid #d1d5db;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 16px;
-  margin-bottom: 16px;
   
   &:focus {
     outline: none;
     border-color: ${colors.brandPrimary};
-    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
   }
+`;
+
+const BrowseContainer = styled.div`
+  margin-bottom: 20px;
+`;
+
+const SearchContainer = styled.div`
+  position: relative;
+  margin-bottom: 16px;
+`;
+
+const SearchInput = styled.input`
+  width: 100%;
+  padding: 10px 12px;
+  padding-right: 40px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 16px;
+  
+  &:focus {
+    outline: none;
+    border-color: ${colors.brandPrimary};
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+`;
+
+const FilterContainer = styled.div`
+  margin-bottom: 16px;
+`;
+
+const Select = styled.select`
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 16px;
+  background-color: white;
+  
+  &:focus {
+    outline: none;
+    border-color: ${colors.brandPrimary};
+  }
+`;
+
+const QuestionsListContainer = styled.div`
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+`;
+
+const QuestionItem = styled.div`
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  cursor: pointer;
+  display: flex;
+  background-color: ${props => props.selected ? '#eff6ff' : 'white'};
+  
+  &:last-child {
+    border-bottom: none;
+  }
+  
+  &:hover {
+    background-color: ${props => props.selected ? '#eff6ff' : '#f9fafb'};
+  }
+`;
+
+const QuestionId = styled.div`
+  min-width: 60px;
+  font-weight: 600;
+  color: ${colors.brandPrimary};
+`;
+
+const QuestionDetails = styled.div`
+  flex: 1;
+`;
+
+const QuestionText = styled.div`
+  font-size: 14px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const QuestionMeta = styled.div`
+  font-size: 12px;
+  color: #6b7280;
 `;
 
 const GenerateButton = styled.button`
-  display: inline-block;
-  padding: 12px 20px;
+  padding: 10px 16px;
   background-color: ${props => props.disabled ? '#9ca3af' : colors.brandPrimary};
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 16px;
+  font-weight: 500;
   cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
-  transition: background-color 0.2s;
   
   &:hover {
-    background-color: ${props => props.disabled ? '#9ca3af' : colors.brandPrimaryDark};
+    background-color: ${props => props.disabled ? '#9ca3af' : '#2563eb'};
   }
-`;
-
-const LoadingMessage = styled.p`
-  margin-top: 16px;
-  color: #6b7280;
-  font-style: italic;
 `;
 
 const ErrorContainer = styled.div`
   background-color: #fee2e2;
   padding: 12px;
   border-radius: 4px;
-  margin-top: 20px;
+  margin: 16px 0;
   color: #b91c1c;
 `;
 
 const ResultContainer = styled.div`
-  margin-top: 30px;
-  padding: 20px;
-  background-color: #f9fafb;
+  margin-top: 24px;
+  padding: 16px;
+  background-color: #f3f4f6;
   border-radius: 8px;
   border-left: 4px solid ${colors.brandPrimary};
   
@@ -440,6 +629,18 @@ const ExplanationText = styled.p`
   white-space: pre-wrap;
   line-height: 1.6;
   color: #374151;
+`;
+
+const LoadingMessage = styled.p`
+  padding: 12px;
+  text-align: center;
+  color: #6b7280;
+`;
+
+const EmptyState = styled.div`
+  padding: 24px;
+  text-align: center;
+  color: #6b7280;
 `;
 
 const InfoBox = styled.div`
@@ -463,53 +664,6 @@ const InfoBox = styled.div`
   li {
     margin-bottom: 6px;
   }
-`;
-
-const ExamplesBox = styled.div`
-  margin-top: 24px;
-  
-  h4 {
-    margin-top: 0;
-    margin-bottom: 12px;
-  }
-  
-  p {
-    margin-bottom: 12px;
-  }
-`;
-
-const ExamplesList = styled.div`
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  overflow: hidden;
-`;
-
-const ExampleItem = styled.div`
-  display: flex;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e5e7eb;
-  cursor: pointer;
-  background-color: ${props => props.selected ? '#eff6ff' : 'white'};
-  
-  &:last-child {
-    border-bottom: none;
-  }
-  
-  &:hover {
-    background-color: ${props => props.selected ? '#eff6ff' : '#f9fafb'};
-  }
-`;
-
-const ExampleId = styled.div`
-  min-width: 40px;
-  font-weight: 600;
-  color: ${colors.brandPrimary};
-`;
-
-const ExampleText = styled.div`
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 `;
 
 export default ExplainQuestion; 
