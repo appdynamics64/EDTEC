@@ -12,6 +12,152 @@ import SidebarLayout from '../components/layout/SidebarLayout';
 
 const MAX_MESSAGES = 100; // Limit the number of messages to prevent excessive memory usage
 
+// Move all styled components to the top level
+const MainContent = styled.div`
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+`;
+
+const LoadingBubble = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  border-radius: 16px;
+  background-color: ${colors.backgroundSecondary || '#f5f7fa'};
+  margin-top: 16px;
+`;
+
+const LoadingDot = styled.div`
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: ${colors.textPrimary || '#1f2937'};
+  margin: 0 4px;
+  animation: ${keyframes`
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+  `} 1.4s infinite ease-in-out;
+  animation-delay: ${props => props.$delay};
+`;
+
+const MessageList = styled.div`
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 16px;
+  padding-bottom: 80px;
+`;
+
+const InputForm = styled.form`
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+`;
+
+const ChatInput = styled.input`
+  flex: 1;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  color: ${colors.textPrimary || '#1f2937'};
+`;
+
+const SendButton = styled.button`
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  background-color: ${colors.brandPrimary || '#4f46e5'};
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-left: 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: ${colors.brandPrimaryHover || '#5b51d8'};
+  }
+
+  &:disabled {
+    background-color: ${colors.textSecondary};
+    cursor: not-allowed;
+  }
+`;
+
+// Move MessageBubbleWrapper to top level
+const MessageBubbleWrapper = ({ isUser, children, ...rest }) => {
+  return (
+    <div 
+      style={{
+        maxWidth: '75%',
+        padding: '12px 16px',
+        borderRadius: '16px',
+        alignSelf: isUser ? 'flex-end' : 'flex-start',
+        backgroundColor: isUser ? (colors.brandPrimary || '#4f46e5') : 'white',
+        color: isUser ? 'white' : (colors.textPrimary || '#1f2937'),
+        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+        fontSize: '1rem',
+        lineHeight: 1.5
+      }}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+};
+
+const PageHeader = styled.div`
+  background-color: #f8fafc;
+  padding: 32px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 24px;
+`;
+
+const HeaderContent = styled.div`
+  max-width: 1200px;
+  margin: 0 auto;
+`;
+
+const PageTitle = styled.h1`
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px 0;
+`;
+
+const PageSubtitle = styled.div`
+  font-size: 1rem;
+  color: #64748b;
+  font-weight: 400;
+  margin-bottom: 0;
+`;
+
+const ChatContainer = styled.div`
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  overflow: hidden;
+`;
+
 const Chatbot = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -263,41 +409,13 @@ const Chatbot = () => {
     }
   };
 
-  // Create a wrapper component
-  const MessageBubbleWrapper = ({ isUser, children, ...rest }) => {
-    return (
-      <div 
-        style={{
-          maxWidth: '75%',
-          padding: '12px 16px',
-          borderRadius: '16px',
-          alignSelf: isUser ? 'flex-end' : 'flex-start',
-          backgroundColor: isUser ? (colors.brandPrimary || '#4f46e5') : 'white',
-          color: isUser ? 'white' : (colors.textPrimary || '#1f2937'),
-          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
-          fontSize: '1rem',
-          lineHeight: 1.5
-        }}
-        {...rest}
-      >
-        {children}
-      </div>
-    );
-  };
-
-  // Add MainContent wrapper for full height layout
-  const MainContent = styled.div`
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-  `;
-
   return (
     <SidebarLayout>
       <MainContent>
         <PageHeader>
           <HeaderContent>
             <PageTitle>AI Study Assistant</PageTitle>
+            <PageSubtitle>Ask questions, get instant help with your studies.</PageSubtitle>
           </HeaderContent>
         </PageHeader>
         <Container>
@@ -369,135 +487,8 @@ const Container = styled.div`
   flex: 1;
   min-height: 0;
   /* height: 100vh; */
-  background-color: ${colors.backgroundSecondary || '#f5f7fa'};
-  overflow: hidden;
-`;
-
-// Add styled components for consistent header
-const PageHeader = styled.div`
   background-color: #f8fafc;
-  padding: 32px;
-  border-bottom: 1px solid #e2e8f0;
-  margin-bottom: 24px;
-`;
-
-const HeaderContent = styled.div`
-  max-width: 1200px;
-  margin: 0 auto;
-`;
-
-const PageTitle = styled.h1`
-  font-size: 2rem;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 8px 0;
-`;
-
-const ChatContainer = styled.div`
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  position: relative;
-  max-width: 800px;
-  margin: 0 auto;
-  width: 100%;
   overflow: hidden;
-`;
-
-// Add styled components for consistent input form
-const InputForm = styled.form`
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  border-top: 1px solid #e2e8f0;
-  background: #f8fafc;
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 2;
-`;
-
-const ChatInput = styled.input`
-  flex: 1;
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 1rem;
-  color: ${colors.textPrimary || '#1f2937'};
-`;
-
-const SendButton = styled.button`
-  padding: 12px 24px;
-  border: none;
-  border-radius: 8px;
-  background-color: ${colors.brandPrimary || '#4f46e5'};
-  color: white;
-  font-size: 1rem;
-  font-weight: 600;
-  margin-left: 16px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-
-  &:hover {
-    background-color: ${colors.brandPrimaryHover || '#5b51d8'};
-  }
-
-  &:disabled {
-    background-color: ${colors.textSecondary};
-    cursor: not-allowed;
-  }
-`;
-
-// Add styled components for consistent message list
-const MessageList = styled.div`
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  padding: 16px;
-  padding-bottom: 80px;
-`;
-
-// Add styled components for consistent message bubbles
-const MessageBubbleWrapper = styled.div`
-  max-width: 75%;
-  padding: 12px 16px;
-  border-radius: 16px;
-  align-self: ${props => props.isUser ? 'flex-end' : 'flex-start'};
-  background-color: ${props => props.isUser ? (colors.brandPrimary || '#4f46e5') : 'white'};
-  color: ${props => props.isUser ? 'white' : (colors.textPrimary || '#1f2937')};
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  font-size: 1rem;
-  line-height: 1.5;
-`;
-
-// Add styled components for consistent loading bubbles
-const LoadingBubble = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  border-radius: 16px;
-  background-color: ${colors.backgroundSecondary || '#f5f7fa'};
-  margin-top: 16px;
-`;
-
-const LoadingDot = styled.div`
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: ${colors.textPrimary || '#1f2937'};
-  margin: 0 4px;
-  animation: ${keyframes`
-    0% { opacity: 0.5; }
-    50% { opacity: 1; }
-    100% { opacity: 0.5; }
-  `} 1.4s infinite ease-in-out;
-  animation-delay: ${props => props.$delay};
 `;
 
 export default Chatbot;
