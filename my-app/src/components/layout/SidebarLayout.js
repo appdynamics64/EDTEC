@@ -14,7 +14,8 @@ import {
   FaChevronLeft,
   FaChevronRight,
   FaClipboardCheck,
-  FaFileAlt
+  FaFileAlt,
+  FaQuestion
 } from 'react-icons/fa';
 import { supabase } from '../../config/supabaseClient';
 import useAuth from '../../hooks/useAuth';
@@ -62,6 +63,7 @@ const SidebarLayout = ({ children }) => {
     { path: '/chatbot', label: 'Ask EDTEC Bot', icon: FaRobot },
     { path: '/document-extractor', label: 'Document Extractor', icon: FaFileAlt },
     { path: '/help', label: 'Help & Support', icon: FaQuestionCircle },
+    { path: '/doubt-solver', label: 'SSC CGL Doubt Solver', icon: FaQuestion },
   ];
 
   return (

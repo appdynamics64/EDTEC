@@ -101,10 +101,10 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
-    if (!user) {
+      if (!user) {
       // Don't navigate immediately, wait for auth to complete
-      return;
-    }
+        return;
+      }
 
     const loadDashboardData = async () => {
       try {
@@ -115,7 +115,7 @@ const Dashboard = () => {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('id, name, selected_exam_id, profile_photo_url, total_xp')
-          .eq('id', user.id)
+        .eq('id', user.id)
           .maybeSingle();
 
         if (profileError) throw profileError;
@@ -137,7 +137,7 @@ const Dashboard = () => {
           .lte('min_xp', totalXp)
           .order('min_xp', { ascending: false })
           .limit(1)
-          .single();
+        .single();
 
         if (levelError) throw levelError;
 
@@ -455,9 +455,9 @@ const Dashboard = () => {
       {/* New Navigation Bar */}
       <nav style={styles.navbar}>
         <div style={styles.navLeft}>
-          <div style={styles.logo}>
+        <div style={styles.logo}>
             PREP<span style={styles.logoHighlight}>HUB</span>
-          </div>
+        </div>
           <div style={styles.examSelector}>
             <span style={styles.examName}>{selectedExam?.exam_name}</span>
             <button
@@ -614,16 +614,16 @@ const Dashboard = () => {
             />
             <button onClick={handleExplainClick} style={styles.button}>
               Get Explanation
-            </button>
+                      </button>
             <button onClick={() => setShowExplanationModal(false)} style={styles.button}>
               Close
             </button>
             {loading && <p>Loading...</p>}
             {error && <p style={styles.error}>{error}</p>}
             {explanation && <p style={styles.explanation}>{explanation}</p>}
-          </div>
-        </div>
-      )}
+                    </div>
+            </div>
+          )}
     </div>
   );
 };
