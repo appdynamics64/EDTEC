@@ -50,7 +50,7 @@ const Login = () => {
           
           // Redirect based on onboarding status
           if (data?.name && data?.selected_exam_id) {
-            navigate('/dashboard');
+            navigate('/dashboard-new');
           } else {
             navigate('/onboarding');
           }
@@ -115,7 +115,7 @@ const Login = () => {
 
       // Redirect based on onboarding status
       if (profiles?.name && profiles?.selected_exam_id) {
-        navigate('/dashboard', { replace: true });
+        navigate('/dashboard-new', { replace: true });
       } else {
         navigate('/onboarding', { replace: true });
       }
@@ -140,7 +140,7 @@ const Login = () => {
       
       if (error) throw error;
       
-      navigate('/dashboard');
+      navigate('/dashboard-new');
     } catch (error) {
       console.error('Demo login error:', error);
       setError('Demo login failed. Please try regular login instead.');
@@ -159,7 +159,7 @@ const Login = () => {
             access_type: 'offline',
             prompt: 'consent',
           },
-          redirectTo: `${window.location.origin}/dashboard`
+          redirectTo: `${window.location.origin}/dashboard-new`
         }
       });
 

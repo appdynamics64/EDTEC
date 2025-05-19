@@ -29,7 +29,8 @@ const DoubtSolver = () => {
     setError(null);
     
     try {
-      const response = await axios.post('/api/chat/doubt', {
+      const API_URL = process.env.REACT_APP_API_URL || '';
+      const response = await axios.post(`${API_URL}/api/chat/doubt`, {
         query: query.trim(),
         include_sources: true
       });
