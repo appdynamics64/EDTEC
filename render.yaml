@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: ssc-cgl-backend
+    env: python
+    rootDir: my-app/question-ingestion-backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: USE_REAL_DATA
+        value: true 
