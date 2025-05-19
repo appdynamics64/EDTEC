@@ -16,3 +16,4 @@ openai>=1.0.0
 pgvector
 psycopg2-binary 
 pdfplumber>=0.10.2
+PyPDF2>=3.0.1
